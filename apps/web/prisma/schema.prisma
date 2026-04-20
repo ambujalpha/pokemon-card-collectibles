@@ -1,0 +1,62 @@
+// PullVault — Prisma schema
+// See docs/architecture/HLD.md §6 for the data model and its invariants.
+// Phase 0 creates: users + ledger. Later phases add cards, drops, packs, listings, auctions.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Users ──────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  balance      Decimal  @default(0) @db.Decimal(18, 4)
+  balanceHeld  Decimal  @default(0) @db.Decimal(18, 4) @map("balance_held")
+  isAdmin      Boolean  @default(false) @map("is_admin")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  ledger Ledger[]
+
+  @@map("users")
+}
+
+// ─── Ledger (audit trail for every balance movement) ────────────────────────
+
+model Ledger {
+  id           String       @id @default(uuid()) @db.Uuid
+  userId       String       @map("user_id") @db.Uuid
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  delta        Decimal      @db.Decimal(18, 4)
+  reason       LedgerReason
+  refType      String       @map("ref_type")
+  refId        String?      @map("ref_id") @db.Uuid
+  balanceAfter Decimal      @map("balance_after") @db.Decimal(18, 4)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId, createdAt])
+  @@index([reason, createdAt])
+  @@map("ledger")
+}
+
+enum LedgerReason {
+  FUND_DEPOSIT
+  PACK_PURCHASE
+  TRADE_BUY
+  TRADE_SELL
+  TRADE_FEE
+  BID_HOLD
+  BID_RELEASE
+  AUCTION_WIN
+  AUCTION_SELL
+  AUCTION_FEE
+
+  @@map("ledger_reason_enum")
+}

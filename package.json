@@ -1,0 +1,28 @@
+{
+  "name": "pullvault",
+  "version": "0.0.1",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "prisma:generate": "pnpm --filter web prisma generate",
+    "prisma:migrate": "pnpm --filter web prisma migrate dev",
+    "prisma:studio": "pnpm --filter web prisma studio",
+    "seed": "pnpm --filter web seed"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "prisma",
+      "@prisma/client",
+      "@prisma/engines",
+      "sharp",
+      "esbuild"
+    ]
+  }
+}

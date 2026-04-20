@@ -1,0 +1,12 @@
+{
+  "name": "ws",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Socket.io server for live auctions + price ticks. Wired up in Phase 6.",
+  "scripts": {
+    "dev": "echo 'ws server not implemented until Phase 6'",
+    "build": "echo 'ws server not implemented until Phase 6'",
+    "lint": "echo 'no lint until Phase 6'",
+    "typecheck": "echo 'no typecheck until Phase 6'"
+  }
+}
