@@ -8,13 +8,18 @@
   },
   "scripts": {
     "dev": "pnpm --filter web dev",
+    "dev:ws": "pnpm --filter ws dev",
+    "dev:all": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "prisma:generate": "pnpm --filter web prisma generate",
-    "prisma:migrate": "pnpm --filter web prisma migrate dev",
-    "prisma:studio": "pnpm --filter web prisma studio",
-    "seed": "pnpm --filter web seed"
+    "test": "pnpm --filter web test",
+    "prisma:generate": "pnpm --filter web exec prisma generate",
+    "prisma:migrate": "pnpm --filter web exec prisma migrate dev",
+    "prisma:studio": "pnpm --filter web exec prisma studio",
+    "seed": "pnpm --filter web seed",
+    "fetch:cards": "pnpm --filter web fetch:cards",
+    "calibrate:rarity": "pnpm --filter web calibrate:rarity"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
