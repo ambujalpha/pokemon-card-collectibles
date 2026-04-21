@@ -11,6 +11,7 @@
     "seed": "tsx prisma/seed.ts",
     "fetch:cards": "tsx scripts/fetch-cards.ts",
     "calibrate:rarity": "tsx scripts/calibrate-rarity.ts",
+    "reset:drops": "tsx scripts/reset-drops.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "prisma generate"

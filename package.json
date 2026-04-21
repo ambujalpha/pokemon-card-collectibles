@@ -19,7 +19,8 @@
     "prisma:studio": "pnpm --filter web exec prisma studio",
     "seed": "pnpm --filter web seed",
     "fetch:cards": "pnpm --filter web fetch:cards",
-    "calibrate:rarity": "pnpm --filter web calibrate:rarity"
+    "calibrate:rarity": "pnpm --filter web calibrate:rarity",
+    "reset:drops": "pnpm --filter web reset:drops"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
