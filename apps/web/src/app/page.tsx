@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AddFundsButton } from "@/components/add-funds-button";
-import { LogoutButton } from "@/components/logout-button";
+import { AppHeader } from "@/components/app-header";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { formatMoney } from "@/lib/money";
@@ -19,29 +19,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-        <nav className="flex items-center gap-4 text-sm">
-          <Link href="/" className="font-semibold tracking-tight">
-            PullVault
-          </Link>
-          <Link
-            href="/drops"
-            className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-          >
-            Drops
-          </Link>
-          <Link
-            href="/me/packs"
-            className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-          >
-            My packs
-          </Link>
-        </nav>
-        <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
-          <span>{user.email}</span>
-          <LogoutButton />
-        </div>
-      </header>
+      <AppHeader email={user.email} isAdmin={user.isAdmin} />
 
       <main className="flex flex-1 flex-col items-center justify-center p-6">
         <section className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">

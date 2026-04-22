@@ -61,6 +61,8 @@ export async function GET(
           rarityBucket: true,
           imageUrl: true,
           basePrice: true,
+          lastPricedAt: true,
+          staleSince: true,
         },
       },
     },

@@ -66,20 +66,36 @@ enum LedgerReason {
 // ─── Cards ──────────────────────────────────────────────────────────────────
 
 model Card {
-  id           String   @id @default(uuid()) @db.Uuid
-  pokemontcgId String   @unique @map("pokemontcg_id")
-  name         String
-  setCode      String   @map("set_code")
-  number       String
-  rarityBucket Rarity   @map("rarity_bucket")
-  imageUrl     String   @map("image_url")
-  basePrice    Decimal  @map("base_price") @db.Decimal(18, 4)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  id            String    @id @default(uuid()) @db.Uuid
+  pokemontcgId  String    @unique @map("pokemontcg_id")
+  name          String
+  setCode       String    @map("set_code")
+  number        String
+  rarityBucket  Rarity    @map("rarity_bucket")
+  imageUrl      String    @map("image_url")
+  basePrice     Decimal   @map("base_price") @db.Decimal(18, 4)
+  lastPricedAt  DateTime? @map("last_priced_at") @db.Timestamptz
+  staleSince    DateTime? @map("stale_since") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
-  packCards PackCard[]
+  packCards      PackCard[]
+  priceSnapshots PriceSnapshot[]
 
   @@index([rarityBucket])
   @@map("cards")
+}
+
+// ─── Price snapshots (Phase 3 history — one row per card per refresh) ───────
+
+model PriceSnapshot {
+  id          String   @id @default(uuid()) @db.Uuid
+  cardId      String   @map("card_id") @db.Uuid
+  card        Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  price       Decimal  @db.Decimal(18, 4)
+  refreshedAt DateTime @default(now()) @map("refreshed_at") @db.Timestamptz
+
+  @@index([cardId, refreshedAt(sort: Desc)])
+  @@map("price_snapshots")
 }
 
 enum Rarity {

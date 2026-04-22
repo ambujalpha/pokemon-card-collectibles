@@ -6,18 +6,22 @@ import { useEffect, useRef, useState } from "react";
 import { Decimal } from "@/lib/money";
 import { FLIP_MS, INTER_CARD_GAP_MS } from "@/lib/reveal-pacing";
 import { computeRevealPnl } from "@/lib/reveal-pnl";
+import { subscribeToPriceUpdates } from "@/lib/ws-client";
 
 type Rarity = "COMMON" | "UNCOMMON" | "RARE" | "EPIC" | "LEGENDARY";
 type Tier = "STARTER" | "PREMIUM" | "ULTRA";
 
 interface RevealedCard {
   position: number;
+  cardId: string;
   pokemontcgId: string;
   name: string;
   rarity: Rarity;
   imageUrl: string;
   pricedCaptured: string;
   basePrice: string;
+  lastPricedAt: string | null;
+  staleSince: string | null;
 }
 
 interface RevealedPack {
@@ -44,6 +48,11 @@ export function RevealFlow({ packId, mode, tierPrices }: Props) {
   const [pack, setPack] = useState<RevealedPack | null>(null);
   const [cards, setCards] = useState<RevealedCard[]>([]);
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
+  // Tracks cardIds whose price changed in the most recent WS event so the
+  // tile can flash green/red briefly. Cleared on a timer.
+  const [flashingDirection, setFlashingDirection] = useState<Map<string, "up" | "down">>(
+    new Map(),
+  );
   const fetchedRef = useRef(false);
 
   // Fire the API call once on mount. Strict mode + dev double-invoke guard via ref.
@@ -84,6 +93,36 @@ export function RevealFlow({ packId, mode, tierPrices }: Props) {
       }
     })();
   }, [packId, mode]);
+
+  // Subscribe to price refresh events. Active once the pack has loaded; works
+  // in both animate (after completion) and static mode. Re-fetches contents
+  // and computes per-card direction (up/down) for the flash overlay.
+  useEffect(() => {
+    if (!pack) return;
+    const unsub = subscribeToPriceUpdates(async ({ changes }) => {
+      const ourCardIds = new Set(cards.map((c) => c.cardId));
+      const relevant = changes.filter((c) => ourCardIds.has(c.cardId));
+      if (relevant.length === 0) return;
+      const directions = new Map<string, "up" | "down">();
+      for (const ch of relevant) {
+        const dir = Number(ch.to) > Number(ch.from) ? "up" : "down";
+        directions.set(ch.cardId, dir);
+      }
+      // Re-fetch the canonical contents (server is authoritative on price + timestamps).
+      try {
+        const res = await fetch(`/api/packs/${pack.id}/contents`);
+        if (res.ok) {
+          const data = (await res.json()) as { cards: RevealedCard[] };
+          setCards(data.cards);
+        }
+      } catch {
+        // Network blip — skip; next event will re-sync.
+      }
+      setFlashingDirection(directions);
+      window.setTimeout(() => setFlashingDirection(new Map()), 800);
+    });
+    return unsub;
+  }, [pack, cards]);
 
   // Step the animation: wait FLIP_MS[rarity] + gap per card, bumping revealedCount
   // until all cards are flipped, then transition to "done". setPhase is only called
@@ -154,7 +193,11 @@ export function RevealFlow({ packId, mode, tierPrices }: Props) {
         ) : null}
       </header>
 
-      <CardFlipStack cards={cards} revealedCount={revealedCount} />
+      <CardFlipStack
+        cards={cards}
+        revealedCount={revealedCount}
+        flashingDirection={flashingDirection}
+      />
 
       {phase.kind === "done" ? (
         <RevealSummary
@@ -174,9 +217,11 @@ export function RevealFlow({ packId, mode, tierPrices }: Props) {
 function CardFlipStack({
   cards,
   revealedCount,
+  flashingDirection,
 }: {
   cards: RevealedCard[];
   revealedCount: number;
+  flashingDirection: Map<string, "up" | "down">;
 }) {
   if (cards.length === 0) return null;
   return (
@@ -185,7 +230,12 @@ function CardFlipStack({
       style={{ perspective: "1200px" }}
     >
       {cards.map((c, idx) => (
-        <CardFlip key={c.position} card={c} revealed={idx < revealedCount} />
+        <CardFlip
+          key={c.position}
+          card={c}
+          revealed={idx < revealedCount}
+          flash={flashingDirection.get(c.cardId)}
+        />
       ))}
     </div>
   );
@@ -207,7 +257,15 @@ const RARITY_BADGE: Record<Rarity, string> = {
   LEGENDARY: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
 };
 
-function CardFlip({ card, revealed }: { card: RevealedCard; revealed: boolean }) {
+function CardFlip({
+  card,
+  revealed,
+  flash,
+}: {
+  card: RevealedCard;
+  revealed: boolean;
+  flash?: "up" | "down";
+}) {
   const duration = FLIP_MS[card.rarity];
   const pull = new Decimal(card.pricedCaptured);
   const now = new Decimal(card.basePrice);
@@ -218,10 +276,16 @@ function CardFlip({ card, revealed }: { card: RevealedCard; revealed: boolean })
     : delta.isPositive()
       ? "text-emerald-600 dark:text-emerald-400"
       : "text-red-600 dark:text-red-400";
+  const flashRing =
+    flash === "up"
+      ? "ring-4 ring-emerald-400/60"
+      : flash === "down"
+        ? "ring-4 ring-red-400/60"
+        : "ring-0 ring-transparent";
 
   return (
     <div
-      className="relative aspect-[5/7] w-full"
+      className={`relative aspect-[5/7] w-full rounded-xl transition-all duration-700 ${flashRing}`}
       style={{ transformStyle: "preserve-3d", perspective: "1200px" }}
     >
       <div
@@ -272,6 +336,10 @@ function CardFlip({ card, revealed }: { card: RevealedCard; revealed: boolean })
               <span className={`font-medium ${deltaTone}`}>
                 {deltaSign} ${now.toFixed(2)}
               </span>
+            </div>
+            <div className="flex items-center justify-between text-[9px] opacity-60">
+              <span>{formatAsOf(card.lastPricedAt)}</span>
+              {card.staleSince ? <span className="text-amber-300">stale</span> : null}
             </div>
           </div>
         </div>
@@ -361,6 +429,12 @@ function tone(delta: Decimal): string {
   return delta.isPositive()
     ? "text-emerald-600 dark:text-emerald-400"
     : "text-red-600 dark:text-red-400";
+}
+
+function formatAsOf(iso: string | null): string {
+  if (!iso) return "as of seed";
+  const d = new Date(iso);
+  return `as of ${d.toISOString().slice(11, 16)} UTC`;
 }
 
 function mapFetchError(status: number): string {

@@ -71,6 +71,8 @@ export async function POST(
               rarityBucket: true,
               imageUrl: true,
               basePrice: true,
+              lastPricedAt: true,
+              staleSince: true,
             },
           },
         },
@@ -128,6 +130,8 @@ interface PackCardRow {
     rarityBucket: Rarity;
     imageUrl: string;
     basePrice: Prisma.Decimal;
+    lastPricedAt: Date | null;
+    staleSince: Date | null;
   };
 }
 
@@ -145,12 +149,15 @@ export function serializeReveal(pack: PackRow, packCards: PackCardRow[]) {
     },
     cards: sorted.map((s) => ({
       position: s.pc.position,
+      cardId: s.pc.card.id,
       pokemontcgId: s.pc.card.pokemontcgId,
       name: s.pc.card.name,
       rarity: s.pc.card.rarityBucket,
       imageUrl: s.pc.card.imageUrl,
       pricedCaptured: s.pc.pricedCaptured.toFixed(4),
       basePrice: s.pc.card.basePrice.toFixed(4),
+      lastPricedAt: s.pc.card.lastPricedAt?.toISOString() ?? null,
+      staleSince: s.pc.card.staleSince?.toISOString() ?? null,
     })),
   };
 }
