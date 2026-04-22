@@ -44,10 +44,10 @@ export function AppHeader({ email, balance, isAdmin }: Props) {
           Market
         </Link>
         <Link
-          href="/me/listings"
+          href="/auctions"
           className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
         >
-          My listings
+          Auctions
         </Link>
       </nav>
       <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">

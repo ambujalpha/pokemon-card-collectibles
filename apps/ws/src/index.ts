@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Server as SocketIOServer } from "socket.io";
 
 import { makeBroadcastHandler } from "./internal/broadcast.js";
+import { startCloseWorker } from "./internal/close-worker.js";
 
 // Load .env at startup. Next.js auto-loads env for apps/web, but `tsx watch`
 // does not — without this, WS_INTERNAL_SECRET etc. would be undefined in dev.
@@ -30,21 +31,35 @@ const handleBroadcast = makeBroadcastHandler(io, INTERNAL_SECRET);
 
 // Rooms allow-listed for generic client subscription. `drop:*` rooms are
 // handled through the dropId-specific branch because the UUID is user-supplied.
-const ALLOWED_ROOMS = new Set(["prices", "listings"]);
+const ALLOWED_ROOMS = new Set(["prices", "listings", "auctions"]);
+
+interface SubMsg {
+  dropId?: string;
+  auctionId?: string;
+  room?: string;
+}
 
 io.on("connection", (socket) => {
-  socket.on("join", (data: { dropId?: string; room?: string }) => {
+  socket.on("join", (data: SubMsg) => {
     if (typeof data?.dropId === "string" && UUID_RE.test(data.dropId)) {
       socket.join(`drop:${data.dropId}`);
+      return;
+    }
+    if (typeof data?.auctionId === "string" && UUID_RE.test(data.auctionId)) {
+      socket.join(`auction:${data.auctionId}`);
       return;
     }
     if (typeof data?.room === "string" && ALLOWED_ROOMS.has(data.room)) {
       socket.join(data.room);
     }
   });
-  socket.on("leave", (data: { dropId?: string; room?: string }) => {
+  socket.on("leave", (data: SubMsg) => {
     if (typeof data?.dropId === "string" && UUID_RE.test(data.dropId)) {
       socket.leave(`drop:${data.dropId}`);
+      return;
+    }
+    if (typeof data?.auctionId === "string" && UUID_RE.test(data.auctionId)) {
+      socket.leave(`auction:${data.auctionId}`);
       return;
     }
     if (typeof data?.room === "string" && ALLOWED_ROOMS.has(data.room)) {
@@ -52,6 +67,8 @@ io.on("connection", (socket) => {
     }
   });
 });
+
+startCloseWorker(INTERNAL_SECRET);
 
 function handleHttp(req: IncomingMessage, res: ServerResponse): void {
   if (req.url?.startsWith("/socket.io")) return;

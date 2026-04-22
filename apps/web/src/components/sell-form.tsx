@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 type Rarity = "COMMON" | "UNCOMMON" | "RARE" | "EPIC" | "LEGENDARY";
+type Mode = "listing" | "auction";
+type Duration = "1h" | "6h" | "24h";
 
 interface Props {
   userCardId: string;
@@ -19,7 +21,9 @@ interface Props {
 export function SellForm(props: Props) {
   const router = useRouter();
   const market = Number(props.marketPrice);
+  const [mode, setMode] = useState<Mode>("listing");
   const [priceStr, setPriceStr] = useState(market.toFixed(2));
+  const [duration, setDuration] = useState<Duration>("24h");
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
 
@@ -27,24 +31,42 @@ export function SellForm(props: Props) {
   const valid = Number.isFinite(price) && price > 0;
   const premium = valid && market > 0 ? ((price - market) / market) * 100 : 0;
 
-  const fee = useMemo(() => (valid ? Math.ceil(price * 0.05 * 100) / 100 : 0), [valid, price]);
+  const feeRate = mode === "listing" ? 0.05 : 0.10;
+  const fee = useMemo(() => (valid ? Math.ceil(price * feeRate * 100) / 100 : 0), [valid, price, feeRate]);
   const net = useMemo(() => (valid ? price - fee : 0), [valid, price, fee]);
 
   const submit = async () => {
     setBusy(true);
     setFlash(null);
     try {
-      const res = await fetch("/api/listings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userCardId: props.userCardId, priceAsk: price.toFixed(4) }),
-      });
-      const body = (await res.json()) as Record<string, unknown>;
-      if (!res.ok) {
-        setFlash(`List failed: ${String(body.error ?? res.status)}`);
+      if (mode === "listing") {
+        const res = await fetch("/api/listings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userCardId: props.userCardId, priceAsk: price.toFixed(4) }),
+        });
+        const body = (await res.json()) as Record<string, unknown>;
+        if (!res.ok) setFlash(`List failed: ${String(body.error ?? res.status)}`);
+        else {
+          setFlash("Listed. Redirecting…");
+          setTimeout(() => router.push(`/market/${String(body.id)}`), 600);
+        }
       } else {
-        setFlash("Listed. Redirecting…");
-        setTimeout(() => router.push(`/market/${String(body.id)}`), 600);
+        const res = await fetch("/api/auctions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userCardId: props.userCardId,
+            startingBid: price.toFixed(4),
+            durationKey: duration,
+          }),
+        });
+        const body = (await res.json()) as Record<string, unknown>;
+        if (!res.ok) setFlash(`Auction failed: ${String(body.error ?? res.status)}`);
+        else {
+          setFlash("Auction started. Redirecting…");
+          setTimeout(() => router.push(`/auctions/${String(body.id)}`), 600);
+        }
       }
     } catch (e) {
       setFlash(e instanceof Error ? e.message : "Network error");
@@ -77,8 +99,23 @@ export function SellForm(props: Props) {
         </div>
       </div>
 
+      <div className="inline-flex overflow-hidden rounded-lg border border-zinc-300 text-xs dark:border-zinc-700">
+        {(["listing", "auction"] as Mode[]).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={`h-9 px-4 font-medium ${mode === m ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : ""}`}
+          >
+            {m === "listing" ? "Fixed price" : "Auction"}
+          </button>
+        ))}
+      </div>
+
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-zinc-500 dark:text-zinc-400">Ask price (USD)</span>
+        <span className="text-zinc-500 dark:text-zinc-400">
+          {mode === "listing" ? "Ask price (USD)" : "Starting bid (USD)"}
+        </span>
         <input
           type="number"
           step="0.01"
@@ -89,12 +126,30 @@ export function SellForm(props: Props) {
         />
       </label>
 
+      {mode === "auction" && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-zinc-500 dark:text-zinc-400">Duration</span>
+          <div className="inline-flex overflow-hidden rounded-lg border border-zinc-300 text-xs dark:border-zinc-700">
+            {(["1h", "6h", "24h"] as Duration[]).map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setDuration(d)}
+                className={`h-8 px-3 font-medium ${duration === d ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : ""}`}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <dl className="grid grid-cols-2 gap-1 text-sm tabular-nums">
         <dt className="text-zinc-500">Premium vs market</dt>
         <dd className={`text-right ${premium > 200 ? "text-red-600" : "text-zinc-500"}`}>
           {valid ? `${premium >= 0 ? "+" : ""}${premium.toFixed(1)}%` : "—"}
         </dd>
-        <dt className="text-zinc-500">Platform fee (5%, ceil)</dt>
+        <dt className="text-zinc-500">Platform fee ({(feeRate * 100).toFixed(0)}%, ceil)</dt>
         <dd className="text-right">{valid ? `$${fee.toFixed(2)}` : "—"}</dd>
         <dt className="text-zinc-500">You receive on sale</dt>
         <dd className="text-right font-semibold">{valid ? `$${net.toFixed(2)}` : "—"}</dd>
@@ -113,7 +168,7 @@ export function SellForm(props: Props) {
           disabled={!valid || busy}
           className="inline-flex h-10 flex-1 items-center justify-center rounded-lg bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
         >
-          {busy ? "Listing…" : "Confirm listing"}
+          {busy ? (mode === "listing" ? "Listing…" : "Starting…") : (mode === "listing" ? "Confirm listing" : `Start ${duration} auction`)}
         </button>
         <Link
           href="/collection"
