@@ -102,3 +102,74 @@ export function subscribeToListingUpdates(
     s.emit("leave", { room: "listings" });
   };
 }
+
+export interface AuctionEventPayload {
+  auctionId: string;
+  event: "created" | "cancelled" | "closed";
+}
+
+// Global `auctions` room — any create/cancel/close. Browsers on /auctions
+// refetch on any event. Per-auction detail subscriptions (live bid stream)
+// go through subscribeToAuctionRoom below.
+export function subscribeToAuctionEvents(
+  onEvent: (payload: AuctionEventPayload) => void,
+): () => void {
+  const s = getSocket();
+  if (!s) return () => {};
+  const join = () => s.emit("join", { room: "auctions" });
+  join();
+  s.on("connect", join);
+  const handler = (payload: AuctionEventPayload) => onEvent(payload);
+  s.on("auction_event", handler);
+  return () => {
+    s.off("auction_event", handler);
+    s.off("connect", join);
+    s.emit("leave", { room: "auctions" });
+  };
+}
+
+export interface BidPlacedPayload {
+  auctionId: string;
+  amount: string;
+  bidderId: string;
+  closesAt: string;
+  extensions: number;
+}
+
+export interface AuctionClosedPayload {
+  auctionId: string;
+  winnerId: string | null;
+  finalBid: string | null;
+}
+
+// Per-auction room for live bid + close events. `onBid` fires on each bid_placed;
+// `onClosed` fires once when the settlement lands.
+export function subscribeToAuctionRoom(
+  auctionId: string,
+  handlers: {
+    onBid?: (p: BidPlacedPayload) => void;
+    onClosed?: (p: AuctionClosedPayload) => void;
+  },
+): () => void {
+  const s = getSocket();
+  if (!s) return () => {};
+  const join = () => s.emit("join", { auctionId });
+  join();
+  s.on("connect", join);
+
+  const onBid = (p: BidPlacedPayload) => {
+    if (p.auctionId === auctionId) handlers.onBid?.(p);
+  };
+  const onClosed = (p: AuctionClosedPayload) => {
+    if (p.auctionId === auctionId) handlers.onClosed?.(p);
+  };
+  s.on("bid_placed", onBid);
+  s.on("auction_closed", onClosed);
+
+  return () => {
+    s.off("bid_placed", onBid);
+    s.off("auction_closed", onClosed);
+    s.off("connect", join);
+    s.emit("leave", { auctionId });
+  };
+}

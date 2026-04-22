@@ -23,12 +23,15 @@ model User {
   isAdmin      Boolean  @default(false) @map("is_admin")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  ledger       Ledger[]
-  createdDrops Drop[]     @relation("DropCreator")
-  packs        UserPack[]
-  cards        UserCard[]
-  listings     Listing[]  @relation("ListingSeller")
-  purchases    Listing[]  @relation("ListingBuyer")
+  ledger         Ledger[]
+  createdDrops   Drop[]     @relation("DropCreator")
+  packs          UserPack[]
+  cards          UserCard[]
+  listings       Listing[]  @relation("ListingSeller")
+  purchases      Listing[]  @relation("ListingBuyer")
+  auctionsSold   Auction[]  @relation("AuctionSeller")
+  auctionsWon    Auction[]  @relation("AuctionWinner")
+  bids           Bid[]
 
   @@map("users")
 }
@@ -209,6 +212,7 @@ model UserCard {
   status        UserCardStatus @default(HELD)
 
   listings Listing[]
+  auctions Auction[]
 
   @@index([userId, status])
   @@index([cardId])
@@ -218,6 +222,7 @@ model UserCard {
 enum UserCardStatus {
   HELD
   LISTED
+  AUCTION
   SOLD
 
   @@map("user_card_status_enum")
@@ -250,4 +255,67 @@ enum ListingStatus {
   CANCELLED
 
   @@map("listing_status_enum")
+}
+
+// ─── Auctions (Phase 6) ─────────────────────────────────────────────────────
+//
+// Auction lifecycle: LIVE → CLOSED (settled with or without a winner) or
+// CANCELLED (seller cancels before any bid). `closesAt` may extend during
+// LIVE via anti-snipe: a bid inside the final 30s pushes closesAt forward by
+// +30s, capped at 20 extensions total (see PARAMETERS.md).
+//
+// Funds: buyer balance_held covers the current high bid. On place, the bid
+// amount is moved from balance → balance_held with BID_HOLD ledger entry.
+// On outbid, the loser gets BID_RELEASE back to balance. On close with a
+// winner, seller gets AUCTION_SELL (+95% of final bid) + AUCTION_FEE (−5%).
+// Winner's balance_held is debited directly on settlement (no second move).
+
+model Auction {
+  id            String        @id @default(uuid()) @db.Uuid
+  sellerId      String        @map("seller_id") @db.Uuid
+  seller        User          @relation("AuctionSeller", fields: [sellerId], references: [id], onDelete: Restrict)
+  userCardId    String        @unique @map("user_card_id") @db.Uuid
+  userCard      UserCard      @relation(fields: [userCardId], references: [id], onDelete: Restrict)
+  startingBid   Decimal       @map("starting_bid") @db.Decimal(18, 4)
+  currentBid    Decimal?      @map("current_bid") @db.Decimal(18, 4)
+  currentBidderId String?     @map("current_bidder_id") @db.Uuid
+  startsAt      DateTime      @default(now()) @map("starts_at") @db.Timestamptz
+  closesAt      DateTime      @map("closes_at") @db.Timestamptz
+  extensions    Int           @default(0)
+  status        AuctionStatus @default(LIVE)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  closedAt      DateTime?     @map("closed_at") @db.Timestamptz
+  winnerId      String?       @map("winner_id") @db.Uuid
+  winner        User?         @relation("AuctionWinner", fields: [winnerId], references: [id], onDelete: Restrict)
+
+  bids Bid[]
+
+  @@index([status, closesAt])
+  @@index([sellerId, status])
+  @@map("auctions")
+}
+
+enum AuctionStatus {
+  LIVE
+  CLOSED
+  CANCELLED
+
+  @@map("auction_status_enum")
+}
+
+// Bid is an append-only audit log. The *current* high bid is denormalised
+// onto auctions.currentBid/currentBidderId for fast read; bids table is the
+// full history (used for the /auctions/:id detail timeline).
+model Bid {
+  id        String   @id @default(uuid()) @db.Uuid
+  auctionId String   @map("auction_id") @db.Uuid
+  auction   Auction  @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+  bidderId  String   @map("bidder_id") @db.Uuid
+  bidder    User     @relation(fields: [bidderId], references: [id], onDelete: Restrict)
+  amount    Decimal  @db.Decimal(18, 4)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([auctionId, createdAt(sort: Desc)])
+  @@index([bidderId, createdAt(sort: Desc)])
+  @@map("bids")
 }
