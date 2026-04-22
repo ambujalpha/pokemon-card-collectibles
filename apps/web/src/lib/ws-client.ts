@@ -47,3 +47,30 @@ export function subscribeToDropInventory(
     s.emit("leave", { dropId });
   };
 }
+
+export interface PricesRefreshedPayload {
+  refreshedAt: string;
+  changes: Array<{ cardId: string; from: string; to: string }>;
+}
+
+// Subscribes to the global `prices` room. Fired whenever an admin triggers a
+// price refresh. Returns an unsubscribe function. No-op without WS configured.
+export function subscribeToPriceUpdates(
+  onUpdate: (payload: PricesRefreshedPayload) => void,
+): () => void {
+  const s = getSocket();
+  if (!s) return () => {};
+
+  const join = () => s.emit("join", { room: "prices" });
+  join();
+  s.on("connect", join);
+
+  const handler = (payload: PricesRefreshedPayload) => onUpdate(payload);
+  s.on("prices_refreshed", handler);
+
+  return () => {
+    s.off("prices_refreshed", handler);
+    s.off("connect", join);
+    s.emit("leave", { room: "prices" });
+  };
+}

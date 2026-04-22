@@ -3,6 +3,16 @@ import { Server as SocketIOServer } from "socket.io";
 
 import { makeBroadcastHandler } from "./internal/broadcast.js";
 
+// Load .env at startup. Next.js auto-loads env for apps/web, but `tsx watch`
+// does not — without this, WS_INTERNAL_SECRET etc. would be undefined in dev.
+// In prod (Railway) the file doesn't exist; env comes from the platform and
+// the ENOENT gets swallowed. Requires Node 20.12+ (repo engines: node >=20).
+try {
+  process.loadEnvFile();
+} catch {
+  // No .env file at CWD — fine in prod where env is injected by the platform.
+}
+
 const PORT = Number(process.env.PORT ?? 3001);
 const INTERNAL_SECRET = process.env.WS_INTERNAL_SECRET ?? "";
 if (!INTERNAL_SECRET || INTERNAL_SECRET.length < 16) {
@@ -18,14 +28,28 @@ const io = new SocketIOServer(server, {
 });
 const handleBroadcast = makeBroadcastHandler(io, INTERNAL_SECRET);
 
+// Rooms allow-listed for generic client subscription. `drop:*` rooms are
+// handled through the dropId-specific branch because the UUID is user-supplied.
+const ALLOWED_ROOMS = new Set(["prices"]);
+
 io.on("connection", (socket) => {
-  socket.on("join", (data: { dropId?: string }) => {
-    if (typeof data?.dropId !== "string" || !UUID_RE.test(data.dropId)) return;
-    socket.join(`drop:${data.dropId}`);
+  socket.on("join", (data: { dropId?: string; room?: string }) => {
+    if (typeof data?.dropId === "string" && UUID_RE.test(data.dropId)) {
+      socket.join(`drop:${data.dropId}`);
+      return;
+    }
+    if (typeof data?.room === "string" && ALLOWED_ROOMS.has(data.room)) {
+      socket.join(data.room);
+    }
   });
-  socket.on("leave", (data: { dropId?: string }) => {
-    if (typeof data?.dropId !== "string" || !UUID_RE.test(data.dropId)) return;
-    socket.leave(`drop:${data.dropId}`);
+  socket.on("leave", (data: { dropId?: string; room?: string }) => {
+    if (typeof data?.dropId === "string" && UUID_RE.test(data.dropId)) {
+      socket.leave(`drop:${data.dropId}`);
+      return;
+    }
+    if (typeof data?.room === "string" && ALLOWED_ROOMS.has(data.room)) {
+      socket.leave(data.room);
+    }
   });
 });
 

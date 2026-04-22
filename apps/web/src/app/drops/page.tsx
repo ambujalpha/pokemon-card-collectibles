@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { LogoutButton } from "@/components/logout-button";
+import { AppHeader } from "@/components/app-header";
 import { DropsList, type DropSummary } from "@/components/drops-list";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -16,7 +15,7 @@ export default async function DropsPage() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
-    select: { email: true, balance: true },
+    select: { email: true, balance: true, isAdmin: true },
   });
   if (!user) redirect("/login");
 
@@ -43,7 +42,7 @@ export default async function DropsPage() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <Header email={user.email} balance={formatMoney(user.balance)} />
+      <AppHeader email={user.email} balance={formatMoney(user.balance)} isAdmin={user.isAdmin} />
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Pack drops</h1>
@@ -54,31 +53,5 @@ export default async function DropsPage() {
         <DropsList initial={initial} />
       </main>
     </div>
-  );
-}
-
-function Header({ email, balance }: { email: string; balance: string }) {
-  return (
-    <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-      <nav className="flex items-center gap-4 text-sm">
-        <Link href="/" className="font-semibold tracking-tight">
-          PullVault
-        </Link>
-        <Link href="/drops" className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">
-          Drops
-        </Link>
-        <Link
-          href="/me/packs"
-          className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-        >
-          My packs
-        </Link>
-      </nav>
-      <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
-        <span className="tabular-nums">${balance}</span>
-        <span>{email}</span>
-        <LogoutButton />
-      </div>
-    </header>
   );
 }
