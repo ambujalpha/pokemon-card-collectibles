@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { TIER_PRICES_USD, type TierName } from "@/lib/rarity-weights";
 import { sortPackCards } from "@/lib/reveal-order";
+import { allocateSpend } from "@/lib/spend-allocation";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -60,7 +62,9 @@ export async function POST(
 
       const packCards = await tx.packCard.findMany({
         where: { userPackId: row.id },
+        orderBy: { position: "asc" },
         select: {
+          id: true,
           position: true,
           pricedCaptured: true,
           card: {
@@ -87,6 +91,24 @@ export async function POST(
           isRevealed: true,
           drop: { select: { packTier: true } },
         },
+      });
+
+      // Phase 4+5: materialise user_cards rows so the collection view + market
+      // listings have a stable 1:1 ownership record per pulled card.
+      // acquiredPrice is allocated proportionally from pack tier price so the
+      // sum matches what the user actually paid.
+      const tierPrice = TIER_PRICES_USD[pack.drop.packTier as TierName];
+      const allocations = allocateSpend(
+        packCards.map((pc) => pc.pricedCaptured),
+        tierPrice,
+      );
+      await tx.userCard.createMany({
+        data: packCards.map((pc, i) => ({
+          userId: session.userId,
+          packCardId: pc.id,
+          cardId: pc.card.id,
+          acquiredPrice: allocations[i],
+        })),
       });
 
       return { ok: true as const, pack, packCards };
