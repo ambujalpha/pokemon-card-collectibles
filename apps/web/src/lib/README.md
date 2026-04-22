@@ -11,38 +11,38 @@ Server-side utilities used by API routes and server components. Client component
 | `redis.ts` | ioredis singleton pointed at Upstash via `REDIS_URL`. Error listener downgrades retry storms to `console.warn`. |
 | `jwt.ts` | HS256 access-token sign/verify. 24h TTL. Cookie name exported as `ACCESS_TOKEN_COOKIE`. |
 | `auth.ts` | `getCurrentUser` reads the cookie, verifies via `jwt.ts`. Used by every API route. |
-| `money.ts` | `decimal.js` config (ROUND_HALF_UP, 28 precision) + `parseMoney` / `formatMoney` / `MoneyParseError`. Mandated by HLD ADR-5. |
+| `money.ts` | `decimal.js` config (ROUND_HALF_UP, 28 precision) + `parseMoney` / `formatMoney` / `MoneyParseError`. Every money value goes through this module — never raw floats. |
 | `ws-emit.ts` | Server → ws relay. `emitToRoom(room, event, payload)` → POST to `WS_INTERNAL_URL/internal/broadcast` with 1s timeout; fire-and-forget. |
-| `ws-client.ts` | `"use client"` socket.io client singleton + typed `subscribeToX` helpers for drop inventory, prices, listings, auctions (per-auction + global). |
+| `ws-client.ts` | `"use client"` socket.io client singleton + typed `subscribeToX` helpers for drop inventory, prices, listings, and auctions (per-auction + global). |
 
-### Pack + drop mechanics (Phase 1)
+### Pack + drop mechanics
 | File | Purpose |
 |------|---------|
 | `rarity-map.ts` | Maps raw pokemontcg.io rarity strings ("Illustration Rare" etc.) to our 5-way enum. |
 | `rarity-weights.ts` | **Auto-generated** by `scripts/calibrate-rarity.ts` — per-tier rarity distribution + pity rules + tier prices + calibrated EV. Do not edit by hand. |
-| `pack-picker.ts` | Seeded RNG pack generator — `pickCards(tier, pool, rng)` returns 10 cards honouring weights + pity. Pure; tested. |
+| `pack-picker.ts` | Seeded RNG pack generator — `pickCards(tier, pool, rng)` returns 5 cards honouring weights + pity. Pure; tested. |
 | `drop-status.ts` | Derives real drop status (`SCHEDULED/LIVE/ENDED/SOLD_OUT`) from `startsAt/endsAt/remaining` + `now`. `drops.status` is a denormalised cache; this is authoritative. |
 
-### Reveal (Phase 2)
+### Pack reveal
 | File | Purpose |
 |------|---------|
 | `reveal-order.ts` | `sortPackCards(cards)` — sort by rarity ordinal ascending (Common first, Legendary last), position as tiebreak. |
 | `reveal-pacing.ts` | Per-rarity flip duration (Common 600ms → Legendary 2500ms). Also `total(cards)` sum. |
 | `reveal-pnl.ts` | `computeRevealPnl(pack, cards)` — dual P&L (at-pull + current) with absolute + pct against pack tier price. |
-| `spend-allocation.ts` | `allocateSpend(pricedCaptured[], tierPrice)` — distributes pack cost across 10 cards proportional to `pricedCaptured`, residual on last so sum is exact. Used by reveal route + backfill migration. |
+| `spend-allocation.ts` | `allocateSpend(pricedCaptured[], tierPrice)` — distributes pack cost across 5 cards proportional to `pricedCaptured`, residual on last so sum is exact. Used by reveal route + backfill migration. |
 
-### Market prices (Phase 3)
+### Market prices
 | File | Purpose |
 |------|---------|
 | `pricing.ts` | `fetchSetPrices(setCode)` (pokemontcg.io), `refreshAllCards({ jitter })` orchestrator, `buildChanges` pure diff, `getCachedPrice(cardId)` cache-through read, `invalidatePriceCache` (SCAN + UNLINK). |
 
-### Marketplace + auctions (Phase 5+6)
+### Marketplace + auctions
 | File | Purpose |
 |------|---------|
 | `marketplace-fee.ts` | `computeTradeFee(ask)` → 5% ceil-to-cent fee + sellerNet. |
 | `auction-math.ts` | `minNextBid` (5% floor $0.10), `applyAntiSnipe(now, closesAt, extensions)`, `computeAuctionFee` (10% ceil), `resolveDuration` (`2m/5m/10m` presets). |
 
-### Admin dashboard (Phase 7)
+### Admin dashboard
 | File | Purpose |
 |------|---------|
 | `economics.ts` | `computeEconomics(window)` aggregates ledger + sales for the admin dashboard. `snapshotToCsv` exports as flat CSV. `windowSince` resolves `today/7d/30d/all`. |

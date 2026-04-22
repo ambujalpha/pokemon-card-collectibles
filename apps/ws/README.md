@@ -15,14 +15,14 @@ apps/ws/
 └── package.json
 ```
 
-## Surfaces (current — Phases 1 + 3 + 5 + 6 landed)
+## Surfaces
 
-### WebSocket rooms (allow-listed for generic client subscription)
-- `drop:<uuid>` — Phase 1 pack inventory updates.
-- `prices` — Phase 3 global price refresh fan-out.
-- `listings` — Phase 5 listing create/sold/cancel fan-out.
-- `auctions` — Phase 6 global auction create/close/cancel fan-out.
-- `auction:<uuid>` — Phase 6 per-auction live bid + close events.
+### WebSocket rooms (allow-listed for client subscription)
+- `drop:<uuid>` — pack drop inventory updates.
+- `prices` — global price refresh fan-out.
+- `listings` — listing create / sold / cancel fan-out.
+- `auctions` — global auction create / close / cancel fan-out.
+- `auction:<uuid>` — per-auction live bid + close events.
 
 ### WebSocket events (server → client)
 | Event | Room | Payload |
@@ -50,7 +50,7 @@ Runs in the ws process from boot. Every 1s it POSTs to web's `/api/internal/auct
 |-----|----------|---------|
 | `PORT` | prod | Railway injects; server listens on this. Default `3001` in dev. |
 | `WS_INTERNAL_SECRET` | always | ≥16 chars. Shared with `apps/web`; guards `/internal/broadcast` + close-worker auth. |
-| `WEB_INTERNAL_URL` | Phase 6 | Base URL of `apps/web` (e.g. `http://localhost:3000` or the Railway private URL). Required for close worker; missing = auctions won't auto-settle. |
+| `WEB_INTERNAL_URL` | always | Base URL of `apps/web` (e.g. `http://localhost:3000` or the Railway private URL). Required for the close worker; missing = auctions won't auto-settle. |
 
 ## Deploy
 
@@ -84,6 +84,6 @@ pnpm dev                    # pnpm-workspace runs web on :3000 + ws on :3001
 2. Buyers bid on `/auctions/:id`; each bid route POSTs `/internal/broadcast` to fan `bid_placed` on `auction:<id>`.
 3. Close worker ticks every 1s → POSTs `/api/internal/auctions/settle-due` with secret → web settles any auctions whose `closesAt` has passed → per-settlement broadcast fans `auction_closed` back through `/internal/broadcast` → clients see the "🏆 you won" banner.
 
-## Phase 6 scaling note
+## Scaling note
 
 Single instance. Multi-instance would need either (a) the socket.io Redis adapter so a broadcast on replica A reaches subscribers on replica B, or (b) leader-elected close worker (Redis SETNX) to avoid N replicas all hammering settle-due. Both are bolt-ons; `SKIP LOCKED` on the web side means duplicate ticks are cheap even without leader election.

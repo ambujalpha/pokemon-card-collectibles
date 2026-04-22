@@ -29,7 +29,7 @@ The reveal flag flips as part of the fetch. Rationale:
 
 Trade-off: a user who loses connection between click and response sees a spinner with no cards to animate. We retry via reload; the pack is already revealed, so static mode takes over.
 
-## Animation pacing (design locked 2026-04-21)
+## Animation pacing
 
 Constants live in `apps/web/src/lib/reveal-pacing.ts`:
 
@@ -50,7 +50,7 @@ Each card shows **At pull** (`PackCard.pricedCaptured`, frozen at purchase) and 
 - At-pull P&L = Σ(pricedCaptured) − tier price
 - Current P&L = Σ(basePrice) − tier price
 
-Phase 2 did not live-tick prices here — `basePrice` was static between manual reseeds. **Phase 3 added live ticks in static mode**: the page subscribes to the WS `prices` room and on `prices_refreshed` events, re-fetches contents, flashes any changed tile (green up / red down for 800ms), and updates the per-tile "as of HH:MM UTC" timestamp. The Current-value summary recomputes against the new prices. Animate mode does not subscribe — the WS connection only matters once the cards are visible.
+In **static mode** the page subscribes to the WS `prices` room and on `prices_refreshed` events re-fetches contents, flashes any changed tile (green up / red down for 800ms), and updates the per-tile "as of HH:MM UTC" timestamp. The Current-value summary recomputes against the new prices. Animate mode does not subscribe — the WS connection only matters once the cards are visible.
 
 ## User flow for this folder
 

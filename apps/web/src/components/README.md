@@ -4,12 +4,12 @@ Client + server React components. Client components carry `"use client"` at the 
 
 ## Files
 
-### Auth + dashboard (Phase 0)
+### Auth + dashboard
 | File | Kind | Used by |
 |------|------|---------|
 | `signup-form.tsx` | client | `app/signup/page.tsx` |
 | `login-form.tsx` | client | `app/login/page.tsx` |
-| `logout-button.tsx` | client | `app-header.tsx` (Phase 0+) |
+| `logout-button.tsx` | client | `app-header.tsx` |
 | `add-funds-button.tsx` | client | `app/page.tsx` (dashboard) |
 
 ### Shared chrome
@@ -18,7 +18,7 @@ Client + server React components. Client components carry `"use client"` at the 
 | `app-header.tsx` | server | every authenticated page (`/`, `/drops`, `/collection`, `/market`, `/auctions`, `/me/*`, `/admin/economics`). Shows nav, balance, admin surfaces. |
 | `admin-refresh-button.tsx` | client | `app-header.tsx` (admin only). Fires `POST /api/admin/prices/refresh` with optional demo-jitter toggle. |
 
-### Drops (Phase 1)
+### Drops
 | File | Kind | Used by |
 |------|------|---------|
 | `drops-list.tsx` | server | `app/drops/page.tsx` — grid of all drops. |
@@ -26,12 +26,12 @@ Client + server React components. Client components carry `"use client"` at the 
 | `drop-countdown.tsx` | client | `drop-detail.tsx` — per-second countdown to `startsAt` / `endsAt`. |
 | `confirm-purchase-modal.tsx` | client | `drop-detail.tsx` — buy-confirmation, calls `/api/drops/:id/purchase`. |
 
-### Reveal (Phase 2)
+### Pack reveal
 | File | Kind | Used by |
 |------|------|---------|
 | `reveal-flow.tsx` | client | `app/packs/[id]/reveal/page.tsx`. Runs the animate / static state machine, CSS 3D card flips, Skip + Summary; subscribes to `prices` room for live re-valuation. |
 
-### Collection + marketplace (Phase 4+5)
+### Collection + marketplace
 | File | Kind | Used by |
 |------|------|---------|
 | `collection-view.tsx` | client | `app/collection/page.tsx`. Grid of owned cards, sort/filter, aggregate tiles, auto-refetch on WS events. |
@@ -39,13 +39,13 @@ Client + server React components. Client components carry `"use client"` at the 
 | `market-browse.tsx` | client | `app/market/page.tsx`. Listing grid, sort/filter, "Yours" badge, refetch on listing/price events. |
 | `listing-detail.tsx` | client | `app/market/[id]/page.tsx`. Ask + market + premium, Buy / Cancel actions, 200%-over-market warning. |
 
-### Auctions (Phase 6)
+### Auctions
 | File | Kind | Used by |
 |------|------|---------|
 | `auctions-browse.tsx` | client | `app/auctions/page.tsx`. Live + Closed tabs, per-second countdown tick (shared via `nowTick` prop to tiles), sort by ending soonest. |
 | `auction-detail.tsx` | client | `app/auctions/[id]/page.tsx`. Live countdown, bid form with client-side min hint (server authoritative), bid history, "you won" banner on close, cancel button when no bids. |
 
-### Admin (Phase 7)
+### Admin
 | File | Kind | Used by |
 |------|------|---------|
 | `economics-dashboard.tsx` | client | `app/admin/economics/page.tsx`. Window tabs (today/7d/30d/all), Refresh, CSV download, platform summary + per-tier pack table + marketplace/auction cards + top spenders. |

@@ -45,7 +45,7 @@ pnpm --filter web reset:drops         # dev helper: zero out inventory + purge u
 | URL | Purpose |
 |-----|---------|
 | `/` | Dashboard — email, balance, add-funds button |
-| `/signup`, `/login` | Auth (Phase 0) |
+| `/signup`, `/login` | Auth |
 | `/drops` | All scheduled / live drops |
 | `/drops/[id]` | Drop detail, live inventory, buy modal |
 | `/packs/[id]/reveal` | Animate-mode (first open) or `?mode=static` (revisit) |
@@ -60,6 +60,5 @@ pnpm --filter web reset:drops         # dev helper: zero out inventory + purge u
 
 ## Where to look
 
-- **Design** — `/docs/architecture/HLD.md` + `/docs/architecture/ARCHITECTURE.md` + `/docs/architecture/DATABASE.md`
-- **Plan** — `/docs/plan/IMPLEMENTATION_PLAN.md` + `PHASE_*.md`
-- **Honest Q&A** — `/docs/qa/phase-*.md`
+- **Architecture overview** — [`/ARCHITECTURE.md`](../../ARCHITECTURE.md)
+- **Database schema + diagrams** — [`/DATABASE.md`](../../DATABASE.md)
