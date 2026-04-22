@@ -31,4 +31,4 @@ Each tab has its own empty state. The Unopened empty state links to `/drops`; th
 2. Sees a new row at top: tier badge, purchase timestamp, **Reveal** button.
 3. Click Reveal → `/packs/[id]/reveal` (animate mode) → ceremony plays → Back to My packs.
 4. Returns to `/me/packs?tab=opened` → the pack has moved tabs.
-5. Click **View contents** on any opened row → `/packs/[id]/reveal?mode=static` — static view of the same 5 cards, no animation.
+5. Click **View contents** on any opened row → `/packs/[id]/reveal?mode=static` — static view of the same 10 cards, no animation.

@@ -1,46 +1,75 @@
 # apps/web/prisma
 
-Prisma schema + migrations for the Supabase Postgres database.
+Prisma schema + migrations for the Supabase Postgres database. Full model and column reference with diagrams in [`docs/architecture/DATABASE.md`](../../../docs/architecture/DATABASE.md).
 
-## Phase 0 schema
+## Models (current)
 
-- `User` → `users` — email, password hash, balance, held balance, admin flag.
-- `Ledger` → `ledger` — append-only audit row per balance movement. One row per `FUND_DEPOSIT`, `PACK_PURCHASE`, `TRADE_*`, `BID_*`, `AUCTION_*` event. See HLD §6.
+### Phase 0 — accounts + audit
+- `User` → `users` — email, password hash, `balance`, `balance_held`, `is_admin`. Every money movement has a matching `Ledger` row.
+- `Ledger` → `ledger` — append-only. Enum `LedgerReason`: FUND_DEPOSIT / PACK_PURCHASE / TRADE_BUY / TRADE_SELL / TRADE_FEE / BID_HOLD / BID_RELEASE / AUCTION_WIN / AUCTION_SELL / AUCTION_FEE. Indexed on `(user_id, created_at)` and `(reason, created_at)` (latter powers Phase 7).
 
-## Phase 1 additions
+### Phase 1 — pack system
+- `Card` → `cards` — 200-card pool from Scarlet & Violet — Paldea Evolved. Mutable `basePrice` (Phase 3 refreshes it); `rarity_bucket` is our collapsed 5-way enum; `lastPricedAt` + `staleSince` added in Phase 3.
+- `Drop` → `drops` — scheduled pack drop with `packTier` + `totalInventory` + `remaining`. Indexed on `(status, startsAt)`.
+- `UserPack` → `user_packs` — one per pack purchased; `isRevealed` flips in Phase 2. Indexed on `(userId, isRevealed)` + `(userId, dropId)`.
+- `PackCard` → `pack_cards` — the 10 cards inside a pack, generated at purchase. `pricedCaptured` freezes the market price at purchase time.
 
-- `Card` → `cards` — one row per seeded Pokemon TCG card. `rarityBucket` is our collapsed 5-way enum; see `src/lib/rarity-map.ts` for the pokemontcg.io→bucket table.
-- `Drop` → `drops` — one scheduled pack drop per row. Columns: `packTier`, `totalInventory`, `remaining`, `startsAt`, `endsAt`, `status`, `createdBy`. Index on `(status, startsAt)`. The `status` field is a denormalised cache; authoritative status is derived on read (see `src/lib/drop-status.ts`).
-- `UserPack` → `user_packs` — one row per pack a user owns. `isRevealed` is false in Phase 1; flips to true in Phase 2. Indexes on `(userId, isRevealed)` and `(userId, dropId)` — the latter powers the D3 "max 5 per user per drop" check during purchase.
-- `PackCard` → `pack_cards` — the 5 cards inside a `UserPack`. `pricedCaptured` is the card's basePrice at the moment of purchase, frozen so pull-time P&L stays honest in Phase 3 even as `Card.basePrice` updates.
+Enums: `PackTier`, `Rarity`, `DropStatus`.
 
-New enums: `PackTier`, `Rarity`, `DropStatus`.
+### Phase 3 — price history
+- `PriceSnapshot` → `price_snapshots` — one row per card per refresh. Indexed on `(cardId, refreshedAt DESC)`.
+
+### Phase 4+5 — ownership + marketplace
+- `UserCard` → `user_cards` — per-user ownership record; 1:1 with `PackCard` via unique index. `status` enum HELD/LISTED/AUCTION/SOLD. Transfer on sale UPDATEs `userId + acquiredPrice + acquiredAt`. Indexed on `(userId, status)` and `(cardId)`.
+- `Listing` → `listings` — marketplace listings with `priceAsk`, `status`, optional `buyerId/soldAt/cancelledAt`. Indexed on `(status, createdAt DESC)` + `(sellerId, status)`.
+
+Enums: `UserCardStatus`, `ListingStatus`.
+
+### Phase 6 — auctions
+- `Auction` → `auctions` — one per `user_card` (unique index). Denormalised `currentBid` + `currentBidderId` for fast read; `closesAt` extensible by anti-snipe (`extensions` capped at 20). `status` enum LIVE/CLOSED/CANCELLED. Indexed on `(status, closesAt)` + `(sellerId, status)`.
+- `Bid` → `bids` — append-only. Indexed on `(auctionId, createdAt DESC)` + `(bidderId, createdAt DESC)`.
+
+Enum: `AuctionStatus`.
 
 ## Commands
 
-| Command                 | What it does                                                  |
-|-------------------------|----------------------------------------------------------------|
-| `pnpm prisma:generate`  | Regenerate the Prisma client after schema edits               |
-| `pnpm prisma:migrate`   | Create + apply a dev migration against the DB in `DIRECT_URL` |
-| `pnpm prisma:studio`    | Web UI at localhost:5555 for inspecting data                  |
-| `pnpm seed`             | Run `prisma/seed.ts` — 3 demo users + 3 drops (one per tier)  |
-| `pnpm fetch:cards`      | One-off: fetch 200 cards from pokemontcg.io into `cards` table |
-| `pnpm calibrate:rarity` | One-off: Monte Carlo tune rarity weights; emits `rarity-weights.ts` + Q&A |
+| Command | What it does |
+|---------|--------------|
+| `pnpm --filter web prisma:generate` | Regenerate Prisma client after schema edits. |
+| `pnpm --filter web prisma migrate dev --name <phase>_<name>` | Create + apply a dev migration against `DIRECT_URL`. |
+| `pnpm --filter web prisma studio` | Web UI at localhost:5555 for inspecting data. |
+| `pnpm --filter web seed` | 3 demo users (admin + alice + bob) + 3 drops (one per tier). Idempotent. |
+| `pnpm --filter web fetch:cards` | Fetch 200 cards from pokemontcg.io into `cards`. Clears and re-inserts. |
+| `pnpm --filter web calibrate:rarity` | Monte Carlo tune rarity weights; emits `src/lib/rarity-weights.ts` + calibration Q&A. |
+| `pnpm --filter web reset:drops` | Dev helper: reset `drops.remaining` to `totalInventory` + delete user packs/cards. |
 
 ## Migration policy
 
-One migration per branch (CLAUDE.md rule). If you run `prisma migrate dev` multiple times on the same branch, delete the stale files and regenerate a single clean one before pushing.
+**One migration per branch.** If `prisma migrate dev` is re-run on the same branch, delete stale files and regenerate a single clean one before pushing. (See `CLAUDE.md` project rules.)
+
+Current migrations on `main` after Phases 0–7:
+- `20260420053723_init`
+- `20260421041753_phase1_pack_drops`
+- `20260422054810_phase3_price_history`
+- `20260422111424_phase4_5_marketplace` (backfills `user_cards` from revealed packs)
+- `20260422115254_phase6_auctions`
+
+Phase 7 added no migration (read-only).
 
 ## Supabase URL split
 
-- `DATABASE_URL` — pooler on port **6543**, `?pgbouncer=true&connection_limit=1`. Runtime queries.
-- `DIRECT_URL` — pooler on port **5432** (session mode). Used only by `prisma migrate`.
+- `DATABASE_URL` — pooled on port **6543** (`?pgbouncer=true&connection_limit=1`). Runtime queries.
+- `DIRECT_URL` — direct on port **5432**. Used only by `prisma migrate` (prepared statements don't work through pgbouncer).
 
-Both live in `.env` at repo root and at `apps/web/.env` — never committed.
+Both live in `./.env` and `./apps/web/.env`, never committed.
+
+## Seed files
+
+- `prisma/seed.ts` — idempotent demo data seeder (3 users, 3 drops).
 
 ## User flow touching this folder
 
-1. New branch → `prisma migrate dev --name <phase>_<what>` creates + applies a migration.
-2. `pnpm fetch:cards` populates the card pool (idempotent — clears existing).
-3. `pnpm calibrate:rarity` tunes weights against the real pool, commits `rarity-weights.ts` + calibration QA doc.
-4. `pnpm seed` adds demo users and drops. Idempotent: skips users already seeded, skips drop tiers that already have a drop.
+1. New branch → `prisma migrate dev --name <phase>_<name>` creates + applies a migration.
+2. `pnpm fetch:cards` populates the card pool (idempotent — truncates existing).
+3. `pnpm calibrate:rarity` tunes weights against the pool; commits `rarity-weights.ts` + calibration Q&A.
+4. `pnpm seed` adds demo users + drops. Safe to re-run — skips existing rows.
