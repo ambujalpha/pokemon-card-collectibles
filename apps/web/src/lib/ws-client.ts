@@ -74,3 +74,31 @@ export function subscribeToPriceUpdates(
     s.emit("leave", { room: "prices" });
   };
 }
+
+export interface ListingEventPayload {
+  listingId: string;
+  event: "created" | "sold" | "cancelled";
+}
+
+// Subscribes to the global `listings` room — any create/sold/cancel broadcast
+// lands here. Consumers typically refetch their local data on any event
+// rather than diffing payloads (v1 has no per-user rooms).
+export function subscribeToListingUpdates(
+  onEvent: (payload: ListingEventPayload) => void,
+): () => void {
+  const s = getSocket();
+  if (!s) return () => {};
+
+  const join = () => s.emit("join", { room: "listings" });
+  join();
+  s.on("connect", join);
+
+  const handler = (payload: ListingEventPayload) => onEvent(payload);
+  s.on("listing_event", handler);
+
+  return () => {
+    s.off("listing_event", handler);
+    s.off("connect", join);
+    s.emit("leave", { room: "listings" });
+  };
+}

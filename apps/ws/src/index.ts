@@ -30,7 +30,7 @@ const handleBroadcast = makeBroadcastHandler(io, INTERNAL_SECRET);
 
 // Rooms allow-listed for generic client subscription. `drop:*` rooms are
 // handled through the dropId-specific branch because the UUID is user-supplied.
-const ALLOWED_ROOMS = new Set(["prices"]);
+const ALLOWED_ROOMS = new Set(["prices", "listings"]);
 
 io.on("connection", (socket) => {
   socket.on("join", (data: { dropId?: string; room?: string }) => {

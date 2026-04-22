@@ -26,6 +26,9 @@ model User {
   ledger       Ledger[]
   createdDrops Drop[]     @relation("DropCreator")
   packs        UserPack[]
+  cards        UserCard[]
+  listings     Listing[]  @relation("ListingSeller")
+  purchases    Listing[]  @relation("ListingBuyer")
 
   @@map("users")
 }
@@ -80,6 +83,7 @@ model Card {
 
   packCards      PackCard[]
   priceSnapshots PriceSnapshot[]
+  userCards      UserCard[]
 
   @@index([rarityBucket])
   @@map("cards")
@@ -172,6 +176,78 @@ model PackCard {
   pricedCaptured Decimal  @map("priced_captured") @db.Decimal(18, 4)
   position       Int
 
+  userCard UserCard?
+
   @@index([userPackId])
   @@map("pack_cards")
+}
+
+// ─── User-owned cards (Phase 4+5) ───────────────────────────────────────────
+//
+// Created on pack reveal (one row per pack_card). Ownership moves via
+// marketplace purchase — user_cards.userId flips and status becomes HELD on
+// the new owner (seller's row is replaced — we reuse the same id by UPDATE,
+// preserving provenance via packCardId → user_packs).
+//
+// Invariants:
+//   - Exactly one user_cards row per pack_cards row (1:1, enforced by unique).
+//   - A card is LISTED iff there is an ACTIVE listing with this user_card_id.
+//   - acquiredPrice is what the CURRENT owner paid: allocated pack cost for
+//     pulls, listing price for marketplace purchases. P&L is always
+//     (card.basePrice - user_card.acquiredPrice).
+
+model UserCard {
+  id            String         @id @default(uuid()) @db.Uuid
+  userId        String         @map("user_id") @db.Uuid
+  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  packCardId    String         @unique @map("pack_card_id") @db.Uuid
+  packCard      PackCard       @relation(fields: [packCardId], references: [id], onDelete: Cascade)
+  cardId        String         @map("card_id") @db.Uuid
+  card          Card           @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  acquiredAt    DateTime       @default(now()) @map("acquired_at") @db.Timestamptz
+  acquiredPrice Decimal        @map("acquired_price") @db.Decimal(18, 4)
+  status        UserCardStatus @default(HELD)
+
+  listings Listing[]
+
+  @@index([userId, status])
+  @@index([cardId])
+  @@map("user_cards")
+}
+
+enum UserCardStatus {
+  HELD
+  LISTED
+  SOLD
+
+  @@map("user_card_status_enum")
+}
+
+// ─── Marketplace listings (Phase 5) ─────────────────────────────────────────
+
+model Listing {
+  id          String        @id @default(uuid()) @db.Uuid
+  sellerId    String        @map("seller_id") @db.Uuid
+  seller      User          @relation("ListingSeller", fields: [sellerId], references: [id], onDelete: Restrict)
+  userCardId  String        @map("user_card_id") @db.Uuid
+  userCard    UserCard      @relation(fields: [userCardId], references: [id], onDelete: Restrict)
+  priceAsk    Decimal       @map("price_ask") @db.Decimal(18, 4)
+  status      ListingStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  soldAt      DateTime?     @map("sold_at") @db.Timestamptz
+  buyerId     String?       @map("buyer_id") @db.Uuid
+  buyer       User?         @relation("ListingBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  cancelledAt DateTime?     @map("cancelled_at") @db.Timestamptz
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([sellerId, status])
+  @@map("listings")
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  CANCELLED
+
+  @@map("listing_status_enum")
 }

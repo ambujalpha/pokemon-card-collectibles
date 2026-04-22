@@ -31,6 +31,24 @@ export function AppHeader({ email, balance, isAdmin }: Props) {
         >
           My packs
         </Link>
+        <Link
+          href="/collection"
+          className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        >
+          Collection
+        </Link>
+        <Link
+          href="/market"
+          className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        >
+          Market
+        </Link>
+        <Link
+          href="/me/listings"
+          className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        >
+          My listings
+        </Link>
       </nav>
       <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
         {isAdmin ? <AdminRefreshButton /> : null}
