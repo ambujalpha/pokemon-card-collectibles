@@ -1,28 +1,34 @@
 # apps/web/src/app/me/packs
 
-User's owned packs. Phase 1 scope: list unopened packs. Phase 2 adds reveal.
+User's owned packs — the single home for pack history. Phase 2 adds the Opened tab.
 
 ## Files
 
-- `page.tsx` — server component. Reads current user from JWT, queries `userPack` joined to `drop` for pack tier, renders a list. Reveal button is present but disabled with a "Phase 2" tooltip.
+- `page.tsx` — server component. Reads the current user from JWT, resolves `?tab=unopened|opened` (default `unopened`), queries `userPack` filtered by `isRevealed`, renders the list with a tab strip. Unopened rows link to `/packs/[id]/reveal` (animate mode); Opened rows link to `/packs/[id]/reveal?mode=static`.
 
 ## API companion
 
-`GET /api/me/packs` lives at `apps/web/src/app/api/me/packs/route.ts`. Returns `{ packs: [{id, dropId, purchasedAt, isRevealed, packTier}] }`. Phase 1 has no consumer of this endpoint other than as a future-proofing hook — the page reads Prisma directly for freshness.
+`GET /api/me/packs` lives at `apps/web/src/app/api/me/packs/route.ts`. Accepts `?revealed=false|true|all`, defaults to `false` for backwards compatibility with Phase 1 callers. Returns `{packs: [{id, dropId, purchasedAt, isRevealed, packTier}]}`. The page reads Prisma directly for freshness; the API route exists for external / future clients.
 
-## Phase 2 dependency
+## Tabs
 
-The disabled Reveal button stays disabled until Phase 2 ships:
+| Tab | Filter | CTA per row | Routes to |
+|---|---|---|---|
+| Unopened (default) | `isRevealed = false` | Reveal | `/packs/:id/reveal` (animate) |
+| Opened | `isRevealed = true` | View contents | `/packs/:id/reveal?mode=static` |
 
-- a reveal route (`POST /api/me/packs/:id/reveal`) that flips `isRevealed` and returns the `PackCard`s in rarity-ascending order,
-- a `/me/packs/:id/reveal` page that animates the reveal in order (commons first, rares last) per the gist.
+Each tab has its own empty state. The Unopened empty state links to `/drops`; the Opened empty state links to the Unopened tab.
 
-The data needed for the reveal is already in the DB at purchase time — `pack_cards` rows are populated in the purchase transaction. Phase 2 is pure UI + one route handler.
+## Why tabs instead of a single flat list
+
+- Reviewers and users can find "my history" with one click.
+- Keeps pack lifecycle discoverable on one route instead of requiring a separate `/me/opened` page.
+- Collection view (Phase 4) will be the forever home for individual revealed *cards*. Opened packs are still a useful concept — you may want to revisit the ceremony of a specific pull.
 
 ## User flow for this folder
 
-1. User buys a pack from `/drops/[id]` → is redirected here.
-2. Sees a new row at the top of the list: tier badge, purchase timestamp, disabled "Reveal (Phase 2)" button.
-3. Can navigate back to `/drops` via the header.
-
-The empty state (no packs) links back to `/drops`.
+1. User buys a pack at `/drops/[id]` → redirected to `/me/packs?tab=unopened` (default).
+2. Sees a new row at top: tier badge, purchase timestamp, **Reveal** button.
+3. Click Reveal → `/packs/[id]/reveal` (animate mode) → ceremony plays → Back to My packs.
+4. Returns to `/me/packs?tab=opened` → the pack has moved tabs.
+5. Click **View contents** on any opened row → `/packs/[id]/reveal?mode=static` — static view of the same 5 cards, no animation.
