@@ -1,6 +1,6 @@
 // PullVault — Prisma schema
 // See docs/architecture/HLD.md §6 for the data model and its invariants.
-// Phase 0 creates: users + ledger. Later phases add cards, drops, packs, listings, auctions.
+// Phase 0: users + ledger. Phase 1: cards, drops, user_packs, pack_cards.
 
 generator client {
   provider = "prisma-client-js"
@@ -23,7 +23,9 @@ model User {
   isAdmin      Boolean  @default(false) @map("is_admin")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  ledger Ledger[]
+  ledger       Ledger[]
+  createdDrops Drop[]     @relation("DropCreator")
+  packs        UserPack[]
 
   @@map("users")
 }
@@ -59,4 +61,101 @@ enum LedgerReason {
   AUCTION_FEE
 
   @@map("ledger_reason_enum")
+}
+
+// ─── Cards ──────────────────────────────────────────────────────────────────
+
+model Card {
+  id           String   @id @default(uuid()) @db.Uuid
+  pokemontcgId String   @unique @map("pokemontcg_id")
+  name         String
+  setCode      String   @map("set_code")
+  number       String
+  rarityBucket Rarity   @map("rarity_bucket")
+  imageUrl     String   @map("image_url")
+  basePrice    Decimal  @map("base_price") @db.Decimal(18, 4)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  packCards PackCard[]
+
+  @@index([rarityBucket])
+  @@map("cards")
+}
+
+enum Rarity {
+  COMMON
+  UNCOMMON
+  RARE
+  EPIC
+  LEGENDARY
+
+  @@map("rarity_enum")
+}
+
+// ─── Drops ──────────────────────────────────────────────────────────────────
+
+model Drop {
+  id             String     @id @default(uuid()) @db.Uuid
+  packTier       PackTier   @map("pack_tier")
+  totalInventory Int        @map("total_inventory")
+  remaining      Int
+  startsAt       DateTime   @map("starts_at") @db.Timestamptz
+  endsAt         DateTime   @map("ends_at") @db.Timestamptz
+  status         DropStatus @default(SCHEDULED)
+  createdBy      String     @map("created_by") @db.Uuid
+  creator        User       @relation("DropCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  packs UserPack[]
+
+  @@index([status, startsAt])
+  @@map("drops")
+}
+
+enum PackTier {
+  STARTER
+  PREMIUM
+  ULTRA
+
+  @@map("pack_tier_enum")
+}
+
+enum DropStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  SOLD_OUT
+
+  @@map("drop_status_enum")
+}
+
+// ─── User-owned packs + their contents ──────────────────────────────────────
+
+model UserPack {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  dropId      String   @map("drop_id") @db.Uuid
+  drop        Drop     @relation(fields: [dropId], references: [id], onDelete: Restrict)
+  purchasedAt DateTime @default(now()) @map("purchased_at") @db.Timestamptz
+  isRevealed  Boolean  @default(false) @map("is_revealed")
+
+  cards PackCard[]
+
+  @@index([userId, isRevealed])
+  @@index([userId, dropId])
+  @@map("user_packs")
+}
+
+model PackCard {
+  id             String   @id @default(uuid()) @db.Uuid
+  userPackId     String   @map("user_pack_id") @db.Uuid
+  userPack       UserPack @relation(fields: [userPackId], references: [id], onDelete: Cascade)
+  cardId         String   @map("card_id") @db.Uuid
+  card           Card     @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  pricedCaptured Decimal  @map("priced_captured") @db.Decimal(18, 4)
+  position       Int
+
+  @@index([userPackId])
+  @@map("pack_cards")
 }

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AddFundsButton } from "@/components/add-funds-button";
@@ -19,7 +20,23 @@ export default async function DashboardPage() {
   return (
     <div className="flex flex-1 flex-col">
       <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-        <div className="font-semibold tracking-tight">PullVault</div>
+        <nav className="flex items-center gap-4 text-sm">
+          <Link href="/" className="font-semibold tracking-tight">
+            PullVault
+          </Link>
+          <Link
+            href="/drops"
+            className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          >
+            Drops
+          </Link>
+          <Link
+            href="/me/packs"
+            className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          >
+            My packs
+          </Link>
+        </nav>
         <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
           <span>{user.email}</span>
           <LogoutButton />
@@ -39,11 +56,15 @@ export default async function DashboardPage() {
               ${formatMoney(user.balanceHeld)} held
             </p>
           )}
-          <div className="mt-6">
+          <div className="mt-6 flex gap-2">
             <AddFundsButton />
           </div>
           <p className="mt-6 text-xs text-zinc-500 dark:text-zinc-400">
-            Packs, trading, and auctions unlock in later phases.
+            Head to{" "}
+            <Link href="/drops" className="underline">
+              Drops
+            </Link>{" "}
+            to buy packs. Trading and auctions unlock in later phases.
           </p>
         </section>
       </main>
