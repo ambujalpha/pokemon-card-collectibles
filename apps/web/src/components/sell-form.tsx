@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 
 type Rarity = "COMMON" | "UNCOMMON" | "RARE" | "EPIC" | "LEGENDARY";
 type Mode = "listing" | "auction";
-type Duration = "1h" | "6h" | "24h";
+type Duration = "2m" | "5m" | "10m";
 
 interface Props {
   userCardId: string;
@@ -23,7 +23,7 @@ export function SellForm(props: Props) {
   const market = Number(props.marketPrice);
   const [mode, setMode] = useState<Mode>("listing");
   const [priceStr, setPriceStr] = useState(market.toFixed(2));
-  const [duration, setDuration] = useState<Duration>("24h");
+  const [duration, setDuration] = useState<Duration>("5m");
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
 
@@ -130,7 +130,7 @@ export function SellForm(props: Props) {
         <div className="flex items-center gap-2">
           <span className="text-sm text-zinc-500 dark:text-zinc-400">Duration</span>
           <div className="inline-flex overflow-hidden rounded-lg border border-zinc-300 text-xs dark:border-zinc-700">
-            {(["1h", "6h", "24h"] as Duration[]).map((d) => (
+            {(["2m", "5m", "10m"] as Duration[]).map((d) => (
               <button
                 key={d}
                 type="button"

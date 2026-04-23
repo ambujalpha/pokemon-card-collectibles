@@ -51,7 +51,17 @@ export function AppHeader({ email, balance, isAdmin }: Props) {
         </Link>
       </nav>
       <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
-        {isAdmin ? <AdminRefreshButton /> : null}
+        {isAdmin ? (
+          <>
+            <Link
+              href="/admin/economics"
+              className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+            >
+              Economics
+            </Link>
+            <AdminRefreshButton />
+          </>
+        ) : null}
         {balance !== undefined ? <span className="tabular-nums">${balance}</span> : null}
         <span>{email}</span>
         <LogoutButton />

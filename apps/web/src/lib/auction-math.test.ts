@@ -71,14 +71,14 @@ describe("computeAuctionFee", () => {
 });
 
 describe("resolveDuration", () => {
-  it("accepts the three locked presets", () => {
-    expect(resolveDuration("1h")).toBe(3600);
-    expect(resolveDuration("6h")).toBe(21600);
-    expect(resolveDuration("24h")).toBe(86400);
+  it("accepts the three demo presets", () => {
+    expect(resolveDuration("2m")).toBe(120);
+    expect(resolveDuration("5m")).toBe(300);
+    expect(resolveDuration("10m")).toBe(600);
   });
   it("rejects anything else", () => {
-    expect(resolveDuration("7d")).toBeNull();
-    expect(resolveDuration(3600)).toBeNull();
+    expect(resolveDuration("1h")).toBeNull();
+    expect(resolveDuration(120)).toBeNull();
     expect(resolveDuration(undefined)).toBeNull();
   });
 });

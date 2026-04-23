@@ -65,10 +65,12 @@ export function computeAuctionFee(finalBid: Prisma.Decimal | string | number): {
 
 // ─── Duration presets ──────────────────────────────────────────────────────
 
+// Demo-friendly short durations — lets a reviewer watch a full auction cycle
+// (place bid → anti-snipe extension → close settlement) within a Loom clip.
 export const AUCTION_DURATION_OPTIONS: ReadonlyArray<{ key: string; seconds: number; label: string }> = [
-  { key: "1h", seconds: 60 * 60, label: "1 hour" },
-  { key: "6h", seconds: 6 * 60 * 60, label: "6 hours" },
-  { key: "24h", seconds: 24 * 60 * 60, label: "24 hours" },
+  { key: "2m", seconds: 2 * 60, label: "2 minutes" },
+  { key: "5m", seconds: 5 * 60, label: "5 minutes" },
+  { key: "10m", seconds: 10 * 60, label: "10 minutes" },
 ];
 
 export function resolveDuration(key: unknown): number | null {

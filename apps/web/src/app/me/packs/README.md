@@ -1,6 +1,6 @@
 # apps/web/src/app/me/packs
 
-User's owned packs — the single home for pack history. Phase 2 adds the Opened tab.
+User's owned packs — the single home for pack history, split into Unopened and Opened tabs.
 
 ## Files
 
@@ -8,7 +8,7 @@ User's owned packs — the single home for pack history. Phase 2 adds the Opened
 
 ## API companion
 
-`GET /api/me/packs` lives at `apps/web/src/app/api/me/packs/route.ts`. Accepts `?revealed=false|true|all`, defaults to `false` for backwards compatibility with Phase 1 callers. Returns `{packs: [{id, dropId, purchasedAt, isRevealed, packTier}]}`. The page reads Prisma directly for freshness; the API route exists for external / future clients.
+`GET /api/me/packs` lives at `apps/web/src/app/api/me/packs/route.ts`. Accepts `?revealed=false|true|all`, defaults to `false`. Returns `{packs: [{id, dropId, purchasedAt, isRevealed, packTier}]}`. The page reads Prisma directly for freshness; the API route exists for external / future clients.
 
 ## Tabs
 
@@ -23,7 +23,7 @@ Each tab has its own empty state. The Unopened empty state links to `/drops`; th
 
 - Reviewers and users can find "my history" with one click.
 - Keeps pack lifecycle discoverable on one route instead of requiring a separate `/me/opened` page.
-- Collection view (Phase 4) will be the forever home for individual revealed *cards*. Opened packs are still a useful concept — you may want to revisit the ceremony of a specific pull.
+- The collection view at `/collection` is the forever home for individual revealed *cards*. Opened packs are still a useful concept — you may want to revisit the ceremony of a specific pull.
 
 ## User flow for this folder
 

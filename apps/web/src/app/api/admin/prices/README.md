@@ -1,6 +1,6 @@
 # apps/web/src/app/api/admin/prices
 
-Admin-gated price refresh endpoint. The single moving part of Phase 3's "live" pricing surface.
+Admin-gated price refresh endpoint. The single moving part of the live-pricing surface.
 
 ## Files
 
@@ -55,7 +55,7 @@ Single-instance web. Two process-local guards:
 1. **Mutex.** `runningRefresh: Promise<RefreshResult> | null` — second call while the first runs returns 409 `already_running`.
 2. **Soft rate limit.** `lastRefreshAt: number` — calls within 5s of the previous return 429 `too_soon` with a `Retry-After` header.
 
-Both guards are intentionally process-local. Multi-instance production deploy would require a Redis SETNX lock; flagged in `docs/qa/phase-3-market-prices.md` §4 as a known Phase 3 limitation.
+Both guards are intentionally process-local. Multi-instance production deploy would require a Redis SETNX lock — a known limitation for scaling.
 
 ## Side effects
 
