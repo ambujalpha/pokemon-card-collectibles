@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AppHeader } from "@/components/app-header";
-import { EconomicsDashboard } from "@/components/economics-dashboard";
+import { EconomicsDashboardTabs } from "@/components/economics-dashboard-tabs";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { formatMoney } from "@/lib/money";
@@ -28,7 +28,7 @@ export default async function EconomicsPage() {
             Realised margins, fee revenue, and top users. Cached 5 minutes; use Refresh for a fresh read.
           </p>
         </div>
-        <EconomicsDashboard />
+        <EconomicsDashboardTabs />
       </main>
     </div>
   );

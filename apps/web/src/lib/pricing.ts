@@ -232,8 +232,8 @@ async function invalidatePriceCache(): Promise<void> {
   }
 }
 
-// Cache-through read for Phase 4+ consumers. Not wired into any UI in Phase 3
-// — this exists so the later caller does not refactor the cache story in.
+// Cache-through read. Returns the cached price if present + fresh, otherwise null;
+// callers fall back to a DB read.
 export async function getCachedPrice(
   cardId: string,
 ): Promise<{ price: string; fetchedAt: string } | null> {

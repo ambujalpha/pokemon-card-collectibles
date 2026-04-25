@@ -41,9 +41,9 @@ export async function POST(
     return NextResponse.json({ error: "invalid_id" satisfies PurchaseError }, { status: 400 });
   }
 
-  // Phase 9: per-user purchase rate limit (looser than the per-IP floor in
-  // middleware so office-NAT humans aren't blocked when one workspace mate
-  // bursts). See docs/qa/phase-9-anti-bot.md §1.
+  // Per-user purchase rate limit (looser than the per-IP floor in
+  // middleware so office-NAT humans aren't blocked when one workspace
+  // mate bursts).
   const rl = await checkLimits([
     { key: `rl:purchase:user:${session.userId}:m`, windowSec: 60, max: PURCHASE_PER_USER_PER_MIN },
     { key: `rl:purchase:user:${session.userId}:h`, windowSec: 3600, max: PURCHASE_PER_USER_PER_HOUR },
@@ -104,16 +104,16 @@ export async function POST(
         return { error: "insufficient_funds" as PurchaseError };
       }
 
-      // Read the full card pool for the picker (Phase 1: ~200 cards, in-memory is fine).
+      // Read the full card pool for the picker (~200 cards, in-memory is fine).
       const pool = await tx.card.findMany({
         select: { id: true, rarityBucket: true, basePrice: true },
       });
-      // Phase 8: draw against the currently active solver weights and pin the
+      // Draw against the currently active solver weights and pin the
       // version on the pack so any post-rebalance audit reads the exact
       // distribution this pack was opened against.
       const { versionId, weights } = await getActiveWeights(tierFromPrisma(drop.pack_tier));
-      // Phase 11: deterministic seeded roll. Server seed is committed-only
-      // until reveal; the same maths runs in the browser verifier.
+      // Deterministic seeded roll. Server seed is committed-only until
+      // reveal; the same maths runs in the browser verifier.
       const commit = newCommit(undefined);
 
       const remainingAfter = drop.remaining - 1;

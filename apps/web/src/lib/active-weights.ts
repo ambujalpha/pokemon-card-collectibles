@@ -4,12 +4,14 @@ import { prisma } from "@/lib/db";
 import type { TierName } from "@/lib/rarity-weights";
 import { RARITY_WEIGHTS } from "@/lib/rarity-weights";
 
-// Version-aware rarity weight reader. See ECONOMICS_SHIFT.md §1.5.
+// Version-aware rarity weight reader.
 //
 // The purchase route reads the *active* version to pick cards and pins
 // `user_packs.weight_version_id` so the audit trail is fixed. Any reveal or
 // audit path that needs the exact weights a pack was drawn against reads
-// `getPinnedWeights(versionId)` — NOT the active weights.
+// `getPinnedWeights(versionId)` — NOT the active weights. This guarantees
+// that rebalancing between purchase and reveal cannot change what a user
+// opens.
 //
 // Cache: a process-local map keyed by tier with a TTL. Invalidated by the
 // rebalance route via `invalidateActiveWeights`. TTL is intentionally short
@@ -47,8 +49,9 @@ export async function getActiveWeights(tier: TierName): Promise<ActiveWeights> {
   });
 
   if (!row) {
-    // No solver version yet — fall back to Part A's calibrated constant.
-    // This keeps the app bootable on a fresh DB before the first rebalance.
+    // No solver version yet — fall back to the calibrated `RARITY_WEIGHTS`
+    // constant so the app stays bootable on a fresh DB before the first
+    // rebalance.
     return { versionId: null, weights: RARITY_WEIGHTS[tier] };
   }
 

@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 type RevealedFilter = "false" | "true" | "all";
 
 function parseRevealed(raw: string | null): RevealedFilter | null {
-  if (raw === null) return "false"; // Phase 1 default: unopened only.
+  if (raw === null) return "false"; // Default: unopened only.
   if (raw === "false" || raw === "true" || raw === "all") return raw;
   return null; // invalid value
 }

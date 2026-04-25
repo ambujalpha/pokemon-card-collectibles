@@ -55,8 +55,9 @@ export async function POST(
     throw err;
   }
 
-  // Phase 10: 2-second min interval between same-user bids on the same
-  // auction. Atomic SET NX EX in Redis — kills micro-increment spam.
+  // 2-second min interval between same-user bids on the same auction.
+  // Atomic SET NX EX in Redis — kills micro-increment spam without
+  // blocking legit bidders (humans can't reliably re-bid in <2 s anyway).
   const slot = await tryClaimBidSlot(session.userId, id);
   if (!slot) {
     return NextResponse.json({ error: "bid_too_fast" }, { status: 429 });
@@ -97,7 +98,8 @@ export async function POST(
       if (amount.lt(new Prisma.Decimal(floor))) {
         return { error: "bid_too_low" as const, minBid: floor };
       }
-      // Phase 10: 5× fat-finger cap.
+      // 5× fat-finger cap. Bids more than 5× current high are almost always
+      // typos ($1.50 → $1500); reject and ask the user to confirm in UI.
       if (isExcessiveOverbid(a.current_bid, amount)) {
         return {
           error: "excessive_overbid" as const,
@@ -235,8 +237,9 @@ export async function POST(
     return NextResponse.json(result, { status });
   }
 
-  // Phase 10: in the sealed window, suppress per-bid broadcasts. Emit a
-  // single sealed_phase_started signal on entry so clients can flip the UI.
+  // In the sealed final-minute window, suppress per-bid broadcasts. Emit a
+  // single sealed_phase_started signal on entry so clients can flip the UI
+  // into "sealed" mode. The countdown still ticks via the closesAt field.
   if (result.sealed) {
     await emitToRoom(`auction:${id}`, "sealed_phase_started", {
       auctionId: id,

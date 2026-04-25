@@ -3,11 +3,11 @@ import type { NextRequest } from "next/server";
 
 import { checkLimit } from "@/lib/ratelimit";
 
-// Global per-IP floor — applies before route handlers run. Per-user limits
-// (looser, see purchase route) live in the route layer because they need
-// session context the middleware can't cheaply read.
-//
-// See docs/qa/phase-9-anti-bot.md §1.
+// Global per-IP rate-limit floor — applies before route handlers run.
+// Per-user limits (looser, see purchase route) live in the route layer
+// because they need session context the middleware can't cheaply read.
+// Looser per-user cap means office-NAT humans aren't blocked when one
+// workspace mate bursts.
 
 const PER_IP_WINDOW_SEC = 60;
 const PER_IP_MAX = 60;

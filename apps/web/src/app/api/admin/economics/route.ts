@@ -8,7 +8,7 @@ const VALID_WINDOWS: ReadonlySet<WindowKey> = new Set(["today", "7d", "30d", "al
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Process-local cache. Keyed by window. Survives until TTL or `?fresh=1`.
-// Multi-instance prod would need Redis; flagged in phase-7 Q&A.
+// Multi-instance prod would need Redis; single-process is fine here.
 const cache = new Map<WindowKey, { at: number; data: EconomicsSnapshot }>();
 
 // GET /api/admin/economics?window=today|7d|30d|all&format=json|csv&fresh=1

@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 
 // Marketplace trade fee: 5% of ask. Fee is ceil-to-cent; seller eats the
 // rounding so buyer pays the round number and platform never short-changes
-// itself on cash flow (see docs/economics/PARAMETERS.md §3).
+// itself on cash flow.
 //
 // Returns 4-decimal strings so callers feed them straight into Prisma Decimal
 // columns without another conversion.

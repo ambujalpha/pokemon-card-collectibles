@@ -48,7 +48,7 @@ export function applyAntiSnipe(
   };
 }
 
-// ─── Auction fee (10% ceil, seller eats rounding — same pattern as Phase 5) ─
+// ─── Auction fee (10% ceil, seller eats rounding — same pattern as marketplace fee) ─
 
 export const AUCTION_FEE_RATE = new Prisma.Decimal("0.10");
 

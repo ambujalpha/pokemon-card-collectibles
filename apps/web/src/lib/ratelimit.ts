@@ -1,12 +1,16 @@
 import { redis } from "@/lib/redis";
 
-// Sliding-window-log rate limiter. See docs/qa/phase-9-anti-bot.md §1.
+// Sliding-window-log rate limiter.
 //
-// Each call is timestamped (microseconds-since-epoch) into a Redis ZSET.
-// Expired entries (older than the window) are pruned by score, then the
-// remaining cardinality is checked against `max`. The full sequence runs
-// inside a Lua script so the prune→count→add path is atomic — no race
-// between concurrent callers.
+// Each call is timestamped (ms-since-epoch) into a Redis ZSET. Expired
+// entries (older than the window) are pruned by score, then the remaining
+// cardinality is checked against `max`. The full sequence runs inside a
+// Lua script so the prune→count→add path is atomic — no race between
+// concurrent callers, no WATCH/MULTI retry storm.
+//
+// Sliding-window-log over fixed-window: the latter has the classic
+// 2× burst at the window edge. Sliding-window-log is exact at the cost
+// of O(n) memory per key, where n = max permitted in window.
 
 const SCRIPT = `
 local key = KEYS[1]

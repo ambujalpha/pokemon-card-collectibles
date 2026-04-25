@@ -4,7 +4,7 @@ import { Rarity } from "@prisma/client";
 
 import type { WeightVector } from "@/lib/active-weights";
 
-// Deterministic pack roll. See docs/qa/phase-11-provably-fair.md §4.
+// Deterministic pack roll.
 //
 // Inputs: server_seed (hex), client_seed (string), nonce (string).
 // Output: 5 rarity slots + sub-stream hashes for picking the actual card

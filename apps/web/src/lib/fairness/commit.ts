@@ -1,6 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 
-// Phase 11 commit-reveal primitives. See docs/qa/phase-11-provably-fair.md.
+// Per-pack commit-reveal primitives.
+//
+// At purchase: commit `SHA256(server_seed)`. At reveal: publish the seed.
+// The hash is the proof that the seed was fixed before the outcome was
+// known — a server cannot retroactively choose seeds whose outputs it
+// likes without breaking the hash.
 
 export interface FairnessCommit {
   serverSeedHex: string;

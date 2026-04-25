@@ -5,8 +5,8 @@ import { prisma } from "@/lib/db";
 import type { BucketMeans } from "./solver";
 
 // Fetch the current mean card price per rarity bucket from the *latest* price
-// snapshot per card (Phase 3's price_snapshots table, one row per card per
-// refresh). Cards that have never been priced fall back to their basePrice.
+// snapshot per card (`price_snapshots` — one row per card per refresh).
+// Cards that have never been priced fall back to their basePrice.
 //
 // Returns the bucket means plus the timestamp of the most recent snapshot
 // used (for the weight-version audit trail).

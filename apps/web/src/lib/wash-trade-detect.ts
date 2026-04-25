@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/db";
 
-// Phase 10 wash-trade heuristics, run on auction close.
-// Writes to auction_flags as a *review queue*; never auto-actions.
-// See docs/qa/phase-10-auction-integrity.md §2.
+// Wash-trade heuristics, run on auction close.
+// Writes to `auction_flags` as a review queue; never auto-actions —
+// legit collectors do trade with the same partner repeatedly.
 
 export type WashFlagReason =
   | "repeat_pair"

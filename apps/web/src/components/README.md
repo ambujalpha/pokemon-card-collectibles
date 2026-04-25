@@ -48,7 +48,8 @@ Client + server React components. Client components carry `"use client"` at the 
 ### Admin
 | File | Kind | Used by |
 |------|------|---------|
-| `economics-dashboard.tsx` | client | `app/admin/economics/page.tsx`. Window tabs (today/7d/30d/all), Refresh, CSV download, platform summary + per-tier pack table + marketplace/auction cards + top spenders. |
+| `economics-dashboard-tabs.tsx` | client | `app/admin/economics/page.tsx`. Top-level tabbed shell — `Revenue / Fraud / Economic Health / Fairness / Users`. Each non-Revenue tab fetches its own section endpoint; Economic Health hosts the **Rebalance** + per-tier **Simulate** buttons that hit the solver. |
+| `economics-dashboard.tsx` | client | `economics-dashboard-tabs.tsx` (Revenue tab body). Window tabs (today/7d/30d/all), Refresh, CSV download, platform summary + per-tier pack table + marketplace/auction cards + top spenders. |
 
 ## Conventions
 

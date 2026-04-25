@@ -1,6 +1,5 @@
-// PullVault — Prisma schema
-// See docs/architecture/HLD.md §6 for the data model and its invariants.
-// Phase 0: users + ledger. Phase 1: cards, drops, user_packs, pack_cards.
+// PullVault — Prisma schema.
+// Reference for tables + invariants lives in DATABASE.md at the repo root.
 
 generator client {
   provider = "prisma-client-js"
@@ -92,7 +91,7 @@ model Card {
   @@map("cards")
 }
 
-// ─── Price snapshots (Phase 3 history — one row per card per refresh) ───────
+// ─── Price snapshots (history — one row per card per refresh) ──────────────
 
 model PriceSnapshot {
   id          String   @id @default(uuid()) @db.Uuid
@@ -172,7 +171,24 @@ model UserPack {
   @@map("user_packs")
 }
 
-// ─── Phase 10: auction integrity flags ─────────────────────────────────────
+// ─── Admin alerts (margin drift, χ² drift, bot flag spike) ─────────────────
+
+model AdminAlert {
+  id             String    @id @default(uuid()) @db.Uuid
+  kind           String
+  severity       String
+  message        String
+  detailJson     Json      @default("{}") @map("detail_json")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  acknowledgedAt DateTime? @map("acknowledged_at") @db.Timestamptz
+  acknowledgedBy String?   @map("acknowledged_by") @db.Uuid
+
+  @@index([acknowledgedAt, createdAt])
+  @@index([kind, createdAt])
+  @@map("admin_alerts")
+}
+
+// ─── Auction integrity flags (wash-trade review queue) ────────────────────
 
 model AuctionFlag {
   id         String    @id @default(uuid()) @db.Uuid
@@ -188,7 +204,7 @@ model AuctionFlag {
   @@map("auction_flags")
 }
 
-// ─── Phase 11: provably fair pack openings ─────────────────────────────────
+// ─── Provably fair pack openings (commit-reveal + audit log) ──────────────
 
 model PackFairness {
   userPackId      String    @id @map("user_pack_id") @db.Uuid
@@ -216,7 +232,7 @@ model FairnessAuditLog {
   @@map("fairness_audit_log")
 }
 
-// ─── Phase 9: anti-bot risk + account linking ──────────────────────────────
+// ─── Anti-bot: per-user risk score + (ip, ua-hash) account links ──────────
 
 model UserRisk {
   userId      String   @id @map("user_id") @db.Uuid
@@ -243,7 +259,7 @@ model AccountLink {
   @@map("account_links")
 }
 
-// ─── Phase 8: per-tier rarity weight versions (economics solver output) ─────
+// ─── Per-tier rarity weight versions (economics solver output) ─────────────
 
 model PackWeightVersion {
   id                String   @id @default(uuid()) @db.Uuid
@@ -278,7 +294,7 @@ model PackCard {
   @@map("pack_cards")
 }
 
-// ─── User-owned cards (Phase 4+5) ───────────────────────────────────────────
+// ─── User-owned cards (collection + marketplace ownership) ────────────────
 //
 // Created on pack reveal (one row per pack_card). Ownership moves via
 // marketplace purchase — user_cards.userId flips and status becomes HELD on
@@ -321,7 +337,7 @@ enum UserCardStatus {
   @@map("user_card_status_enum")
 }
 
-// ─── Marketplace listings (Phase 5) ─────────────────────────────────────────
+// ─── Marketplace listings ─────────────────────────────────────────────────
 
 model Listing {
   id          String        @id @default(uuid()) @db.Uuid
@@ -350,7 +366,7 @@ enum ListingStatus {
   @@map("listing_status_enum")
 }
 
-// ─── Auctions (Phase 6) ─────────────────────────────────────────────────────
+// ─── Auctions (English with anti-snipe + sealed final minute) ─────────────
 //
 // Auction lifecycle: LIVE → CLOSED (settled with or without a winner) or
 // CANCELLED (seller cancels before any bid). `closesAt` may extend during

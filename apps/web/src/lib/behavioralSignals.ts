@@ -3,7 +3,12 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 
 // Behavioural risk signals for the purchase + reveal paths.
-// See docs/qa/phase-9-anti-bot.md §3.
+//
+// Each signal is intentionally cheap and individually weak — flagging
+// happens at a threshold (`score ≥ 100`) that no single signal can clear.
+// A single rapid-purchase event won't flip an account; rapid-purchase
+// + freshSession + multiAccount together will. False-positive cost: a
+// human can never accidentally hit the threshold.
 
 export const SIGNAL_WEIGHTS = {
   fastReveal: 30,
