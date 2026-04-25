@@ -38,6 +38,28 @@ describe("rollPack", () => {
     expect(a).not.toEqual(b);
   });
 
+  it("RARE pity upgrades the lowest slot when no slot is RARE+", () => {
+    // Heavy COMMON weights so a no-pity roll is overwhelmingly all-low.
+    const heavyLow = { COMMON: 0.95, UNCOMMON: 0.05, RARE: 0, EPIC: 0, LEGENDARY: 0 };
+    const r = rollPack("ab".repeat(32), "c", "n", heavyLow, "RARE");
+    expect(r.pityApplied).toBe(true);
+    expect(r.slotRarities.some((x) => x === "RARE" || x === "EPIC" || x === "LEGENDARY")).toBe(true);
+  });
+
+  it("EPIC pity upgrades when no slot reaches EPIC", () => {
+    const heavyLow = { COMMON: 0.5, UNCOMMON: 0.3, RARE: 0.2, EPIC: 0, LEGENDARY: 0 };
+    const r = rollPack("ab".repeat(32), "c", "n", heavyLow, "EPIC");
+    expect(r.pityApplied).toBe(true);
+    expect(r.slotRarities.some((x) => x === "EPIC" || x === "LEGENDARY")).toBe(true);
+  });
+
+  it("does not apply pity when the floor is already met", () => {
+    // EPIC-heavy weights guarantee an EPIC.
+    const heavyHigh = { COMMON: 0, UNCOMMON: 0, RARE: 0, EPIC: 1, LEGENDARY: 0 };
+    const r = rollPack("ab".repeat(32), "c", "n", heavyHigh, "RARE");
+    expect(r.pityApplied).toBe(false);
+  });
+
   it("uniforms are in [0, 1)", () => {
     const r = rollPack("ab".repeat(32), "c", "n", WEIGHTS);
     for (const u of [...r.slotUniforms, ...r.cardUniforms]) {

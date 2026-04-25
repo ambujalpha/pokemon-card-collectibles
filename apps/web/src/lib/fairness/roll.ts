@@ -8,7 +8,8 @@ import type { WeightVector } from "@/lib/active-weights";
 //
 // Inputs: server_seed (hex), client_seed (string), nonce (string).
 // Output: 5 rarity slots + sub-stream hashes for picking the actual card
-// id within each slot.
+// id within each slot, with a deterministic post-pity step so the player
+// gets the tier-promised minimum rarity.
 //
 // The maths must be reproducible exactly in the browser verifier
 // (`/verify/pack/:id`), so anything not in this file must be re-derivable
@@ -16,14 +17,21 @@ import type { WeightVector } from "@/lib/active-weights";
 
 export const CARDS_PER_PACK = 5;
 const BUCKETS: Rarity[] = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"];
+const RARITY_ORDER: Record<Rarity, number> = {
+  COMMON: 0, UNCOMMON: 1, RARE: 2, EPIC: 3, LEGENDARY: 4,
+};
+
+export type PityFloor = "NONE" | "RARE" | "EPIC";
 
 export interface RollResult {
   /** Per-slot uniform [0,1) used to pick a rarity. */
   slotUniforms: number[];
-  /** Per-slot rarity bucket selected from `weights`. */
+  /** Per-slot rarity bucket *after* pity adjustment. */
   slotRarities: Rarity[];
   /** Per-slot uniform [0,1) used to pick a card *within* the chosen bucket. */
   cardUniforms: number[];
+  /** True when pity replaced the lowest-rarity slot to honour the floor. */
+  pityApplied: boolean;
 }
 
 export function rollPack(
@@ -31,6 +39,7 @@ export function rollPack(
   clientSeed: string,
   nonce: string,
   weights: WeightVector,
+  pity: PityFloor = "NONE",
 ): RollResult {
   // Two HMAC chains: one for rarity selection, one for in-bucket card pick.
   // The second chain depends on slot index so it can't reuse rarity entropy.
@@ -51,7 +60,29 @@ export function rollPack(
     cardUniforms.push(u2);
   }
 
-  return { slotUniforms, slotRarities, cardUniforms };
+  // Pity floor: if the highest rarity in the pack is below the tier's
+  // promised floor, upgrade the lowest-rarity slot to exactly the floor
+  // rarity. Deterministic — no extra entropy consumed; the choice of
+  // *which* card inside the upgraded bucket reuses that slot's existing
+  // cardUniform. Browser verifier reproduces this step verbatim.
+  let pityApplied = false;
+  if (pity !== "NONE") {
+    const floor = pity === "RARE" ? RARITY_ORDER.RARE : RARITY_ORDER.EPIC;
+    const maxRarity = Math.max(...slotRarities.map((r) => RARITY_ORDER[r]));
+    if (maxRarity < floor) {
+      // Lowest-rarity slot wins the upgrade. Tie-break: lowest slot index.
+      let lowestIdx = 0;
+      for (let i = 1; i < slotRarities.length; i++) {
+        if (RARITY_ORDER[slotRarities[i]!] < RARITY_ORDER[slotRarities[lowestIdx]!]) {
+          lowestIdx = i;
+        }
+      }
+      slotRarities[lowestIdx] = pity === "RARE" ? "RARE" : "EPIC";
+      pityApplied = true;
+    }
+  }
+
+  return { slotUniforms, slotRarities, cardUniforms, pityApplied };
 }
 
 function pickRarity(u: number, weights: WeightVector): Rarity {
