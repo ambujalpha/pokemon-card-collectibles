@@ -1,6 +1,11 @@
 import { LedgerReason, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
+import {
+  isExcessiveOverbid,
+  isInSealedWindow,
+  tryClaimBidSlot,
+} from "@/lib/auction-integrity";
 import { applyAntiSnipe, minNextBid } from "@/lib/auction-math";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -50,6 +55,13 @@ export async function POST(
     throw err;
   }
 
+  // Phase 10: 2-second min interval between same-user bids on the same
+  // auction. Atomic SET NX EX in Redis — kills micro-increment spam.
+  const slot = await tryClaimBidSlot(session.userId, id);
+  if (!slot) {
+    return NextResponse.json({ error: "bid_too_fast" }, { status: 429 });
+  }
+
   const result = await prisma.$transaction(async (tx) => {
     const locked = await tx.$queryRaw<{
       id: string; seller_id: string; status: string;
@@ -84,6 +96,13 @@ export async function POST(
       const floor = minNextBid(a.current_bid);
       if (amount.lt(new Prisma.Decimal(floor))) {
         return { error: "bid_too_low" as const, minBid: floor };
+      }
+      // Phase 10: 5× fat-finger cap.
+      if (isExcessiveOverbid(a.current_bid, amount)) {
+        return {
+          error: "excessive_overbid" as const,
+          maxAllowed: new Prisma.Decimal(a.current_bid).mul(5).toFixed(4),
+        };
       }
     }
 
@@ -196,8 +215,10 @@ export async function POST(
       ok: true as const,
       amount: amount.toFixed(4),
       closesAt: snipe.closesAt.toISOString(),
+      newClosesAtDate: snipe.closesAt,
       extended: snipe.extensions > a.extensions,
       extensions: snipe.extensions,
+      sealed: isInSealedWindow(now, snipe.closesAt),
     };
   }, {
     isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
@@ -208,18 +229,35 @@ export async function POST(
     const status =
       result.error === "not_found" ? 404
       : result.error === "self_bid" ? 400
+      : result.error === "excessive_overbid" ? 400
       : result.error === "insufficient_funds" ? 402
       : 409;
     return NextResponse.json(result, { status });
   }
 
-  await emitToRoom(`auction:${id}`, "bid_placed", {
-    auctionId: id,
-    amount: result.amount,
-    bidderId: session.userId,
-    closesAt: result.closesAt,
-    extensions: result.extensions,
-  });
+  // Phase 10: in the sealed window, suppress per-bid broadcasts. Emit a
+  // single sealed_phase_started signal on entry so clients can flip the UI.
+  if (result.sealed) {
+    await emitToRoom(`auction:${id}`, "sealed_phase_started", {
+      auctionId: id,
+      closesAt: result.closesAt,
+    });
+  } else {
+    await emitToRoom(`auction:${id}`, "bid_placed", {
+      auctionId: id,
+      amount: result.amount,
+      bidderId: session.userId,
+      closesAt: result.closesAt,
+      extensions: result.extensions,
+    });
+  }
 
-  return NextResponse.json(result);
+  return NextResponse.json({
+    ok: result.ok,
+    amount: result.amount,
+    closesAt: result.closesAt,
+    extended: result.extended,
+    extensions: result.extensions,
+    sealed: result.sealed,
+  });
 }
