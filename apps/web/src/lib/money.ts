@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 
 // Every money value uses this Decimal config across the app.
-// ROUND_HALF_UP matches the fee-rounding policy in docs/economics/PARAMETERS.md §3.
+// ROUND_HALF_UP is the default; fees apply ceil-to-cent at the call site.
 Decimal.set({ precision: 28, rounding: Decimal.ROUND_HALF_UP });
 
 export { Decimal };

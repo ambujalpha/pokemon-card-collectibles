@@ -58,8 +58,8 @@ export async function POST(request: Request) {
       event: "closed",
     });
 
-    // Phase 10: post-close wash-trade evaluation. Flags go into a review
-    // queue (auction_flags); never auto-action.
+    // Post-close wash-trade evaluation. Flags go into a review queue
+    // (auction_flags); never auto-action.
     if (s.winnerId && s.sellerId && s.finalBid && s.marketPriceUsd) {
       try {
         await evaluateWashTradeSignals({

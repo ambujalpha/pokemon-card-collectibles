@@ -18,10 +18,11 @@ All HTTP endpoints for PullVault. Each `route.ts` becomes an endpoint at its fol
 |--------|------|---------|
 | GET | `/api/drops` | List all drops with derived status. |
 | GET | `/api/drops/[id]` | Drop detail + remaining. |
-| POST | `/api/drops/[id]/purchase` | Atomic purchase: `SELECT FOR UPDATE` on drop, balance check, decrement remaining, generate 5 pack_cards, ledger `PACK_PURCHASE`. Emits `inventory_update` on `drop:<id>`. |
-| POST | `/api/packs/[id]/reveal` | Atomic reveal: `SELECT FOR UPDATE` on user_pack, flip isRevealed, generate user_cards rows with ratio-allocated acquiredPrice. |
+| POST | `/api/drops/[id]/purchase` | Atomic purchase: per-user rate-limit (6/min, 20/hr) → 0–500 ms admission jitter → `SELECT FOR UPDATE` on drop → balance check → decrement remaining → deterministic seeded roll using the active solver weights → write 5 `pack_cards` + a `pack_fairness` commit row → ledger `PACK_PURCHASE`. Emits `inventory_update` on `drop:<id>`. |
+| POST | `/api/packs/[id]/reveal` | Atomic reveal: `SELECT FOR UPDATE` on user_pack, flip isRevealed, stamp `pack_fairness.revealed_at`, generate user_cards rows with ratio-allocated acquiredPrice. |
 | GET  | `/api/packs/[id]/contents` | Revisit-only. 409 until revealed. Used by `?mode=static` reveal pages. |
 | GET  | `/api/me/packs` | Owned packs with `?revealed=true|false|all`. |
+| GET  | `/api/cards/pool` | Public canonical card pool sorted by id — input for the browser fairness verifier. |
 
 ### Market prices — see [`admin/prices/README.md`](./admin/prices/README.md) for detail
 | Method | Path | Purpose |
@@ -47,15 +48,29 @@ All HTTP endpoints for PullVault. Each `route.ts` becomes an endpoint at its fol
 |--------|------|---------|
 | POST | `/api/auctions` | Create auction (duration `2m/5m/10m`). Card HELD → AUCTION. |
 | GET | `/api/auctions` | Browse LIVE or CLOSED with sort + rarity filter. |
-| GET | `/api/auctions/[id]` | Detail + last 50 bids + seller/winner emails. |
+| GET | `/api/auctions/[id]` | Detail + last 50 bids + seller/winner emails. **Sealed final-minute window** redacts `currentBid`, `currentBidderId`, `bids[]`, `isLeading`; sets `sealed: true`. |
 | DELETE | `/api/auctions/[id]` | Seller cancel (only if LIVE + zero bids). |
-| POST | `/api/auctions/[id]/bid` | Atomic bid: FOR UPDATE on auction, id-sorted lock on (bidder, prev bidder), balance check, BID_HOLD + optional BID_RELEASE for previous bidder, anti-snipe extension, append to `bids`, update denormalised high. |
-| POST | `/api/internal/auctions/settle-due` | **Internal** (`X-Internal-Secret`). Called by `apps/ws` close worker every 1s. `SELECT FOR UPDATE SKIP LOCKED` up to 20 due auctions, settles each in its own tx, broadcasts `auction_closed`. |
+| POST | `/api/auctions/[id]/bid` | Atomic bid: 2 s same-user min-interval (Redis SET NX EX) → FOR UPDATE on auction → 5× fat-finger cap → id-sorted lock on (bidder, prev bidder) → balance check → BID_HOLD + optional BID_RELEASE for previous bidder → anti-snipe extension → append to `bids` → update denormalised high. Inside the sealed final 60 s, suppresses `bid_placed`; emits `sealed_phase_started` once on entry. |
+| POST | `/api/internal/auctions/settle-due` | **Internal** (`X-Internal-Secret`). Called by `apps/ws` close worker every 1s. `SELECT FOR UPDATE SKIP LOCKED` up to 20 due auctions, settles each in its own tx, broadcasts `auction_closed`, then runs wash-trade detection (writes to `auction_flags`) outside the tx. |
+
+### Fairness (public)
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/fairness/[purchaseId]` | Public commit/reveal record for a pack. Pre-reveal: hash + client seed + nonce. Post-reveal: also returns `serverSeed` and pinned `weights`. |
+| GET | `/api/fairness/audit` | Per-tier chi-squared GOF over revealed packs (`?window=7d|30d|all`) against the active `pack_weight_versions` row. |
 
 ### Admin dashboard
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/admin/economics` | Aggregated platform metrics. Query: `window=today|7d|30d|all`, `format=json|csv`, `fresh=1`. 5-min process-local cache. |
+| GET | `/api/admin/economics` | Revenue snapshot. Query: `window=today|7d|30d|all`, `format=json|csv`, `fresh=1`. 5-min process-local cache. |
+| POST | `/api/admin/economics/simulate` | Seeded Monte-Carlo simulation (`?tier=&n=&seed=`). Returns realised margin / win-rate / bucket hit rates against active weights, plus a `proposed` block from the solver. |
+| POST | `/api/admin/economics/rebalance` | Re-solve all tiers (or `?tier=…`) from current bucket means. Atomically deactivates prior versions and inserts new active rows. 409 `solver_infeasible` with diagnostics on hard infeasibility. |
+| GET | `/api/admin/economics/fraud` | Fraud tab payload — flagged-account count, top risk scores, account-link clusters with ≥ 3 users. |
+| GET | `/api/admin/economics/health` | Per-tier realised vs target margin (last 7 d), active version metadata, `rebalanceSuggested` flag. Side-effect: writes `admin_alerts` rows on margin drift. |
+| GET | `/api/admin/economics/users` | Users tab payload — total/active counts, auction participation, drop engagement, 7-d retention. |
+| GET | `/api/admin/auctions/analytics` | Auction analytics (`?window=7d|30d|all`) — counts, snipe rate, flag counts, final-vs-market histogram. |
+| GET | `/api/admin/alerts` | Newest 200 alerts (default unacknowledged only; `?include=ack` returns history) plus the threshold constants. |
+| POST | `/api/admin/alerts/[id]/ack` | Acknowledge an alert; flips `acknowledged_at` and records the admin id. |
 
 ## Route conventions
 

@@ -18,10 +18,9 @@ import type { TierName } from "@/lib/rarity-weights";
 // The weight vector w lives on the simplex (Σw=1, w≥0). We parametrise the
 // single degree of freedom by T_low = w_COMMON+w_UNCOMMON. Given fixed
 // internal ratios, EV per card is linear in T_low, so the EV equation
-// solves directly.
-//
-// See docs/economics/ECONOMICS_SHIFT.md §1.2 for why this avoids an LP
-// solver, and §1.4 for the win-rate floor rationale.
+// solves directly. No LP solver / WASM dependency — the problem is small
+// enough (5 buckets, 1 EV equality, 1 simplex constraint, 1 floor) that a
+// closed form is exact.
 
 export const CARDS_PER_PACK = 5;
 
@@ -37,7 +36,11 @@ export type BucketMeans = Record<Rarity, number>;
 export type WeightVector = Record<Rarity, number>;
 
 export interface TierConstraints {
-  /** Minimum combined mass on COMMON+UNCOMMON. See ECONOMICS_SHIFT.md §1.4. */
+  /**
+   * Minimum combined mass on COMMON+UNCOMMON. Prevents the solver from
+   * collapsing into a "one jackpot, everyone else zero" distribution that
+   * meets the margin target on paper but feels brutal to play.
+   */
   winRateFloor: number;
   /** Per-bucket minimum weight (usually a small epsilon for diversity). */
   perBucketMin: WeightVector;
@@ -137,6 +140,9 @@ export function solveWeights(input: SolveInput): SolveResult {
   // ECONOMICS_SHIFT.md §1.4.
   let tLow = tLowUnclamped;
   let constraintBinding: ConstraintBinding = null;
+  // When the win-rate floor binds, realised margin ends up *above* target
+  // (house richer) — acceptable per policy. The floor is a lower bound on
+  // win-rate that we honour even at the cost of ceding some margin.
   if (tLow < lowMin) {
     tLow = lowMin;
     constraintBinding = "winRateFloor";
@@ -161,15 +167,13 @@ export function solveWeights(input: SolveInput): SolveResult {
   // SolverInfeasibleError so the admin sees it.
   for (const b of BUCKETS) {
     if (weights[b] < constraints.perBucketMin[b] - 1e-9) {
-      throw new SolverInfeasibleError(
-        `bucket ${b} weight below per-bucket minimum`,
-        {
-          tier,
-          bucket: b,
-          weight: weights[b],
-          min: constraints.perBucketMin[b],
-        },
-      );
+      const msg = `bucket ${b} weight below per-bucket minimum`;
+      throw new SolverInfeasibleError(msg, {
+        tier,
+        bucket: b,
+        weight: weights[b],
+        min: constraints.perBucketMin[b],
+      });
     }
   }
 

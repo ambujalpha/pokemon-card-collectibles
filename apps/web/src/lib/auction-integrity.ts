@@ -2,7 +2,8 @@ import { Prisma } from "@prisma/client";
 
 import { redis } from "@/lib/redis";
 
-// Phase 10 hardening helpers. See docs/qa/phase-10-auction-integrity.md.
+// Auction hardening helpers — fat-finger cap, per-user min-bid interval,
+// and sealed-bid final-minute window.
 
 // ─── Bid increment cap (5×) ────────────────────────────────────────────────
 //

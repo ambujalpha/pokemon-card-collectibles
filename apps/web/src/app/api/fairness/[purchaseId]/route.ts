@@ -20,7 +20,7 @@ interface FairnessRow {
 //
 // Public — anyone can verify any pack's fairness record. Pre-reveal only the
 // commit hash is returned; the server seed is exposed only after the user
-// has revealed the pack. See docs/qa/phase-11-provably-fair.md.
+// has revealed the pack.
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ purchaseId: string }> },

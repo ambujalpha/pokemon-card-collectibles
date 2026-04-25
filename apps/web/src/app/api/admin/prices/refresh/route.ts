@@ -10,8 +10,8 @@ import {
 import { emitToRoom } from "@/lib/ws-emit";
 
 // In-memory coordination. Safe for our single-instance web deployment.
-// Multi-instance would need a Redis SETNX lock — documented in the Q&A as
-// a known Phase 3 limitation.
+// Multi-instance would need a Redis SETNX lock — known limitation,
+// flagged for production hardening.
 let runningRefresh: Promise<RefreshResult> | null = null;
 let lastRefreshAt = 0;
 const MIN_INTERVAL_MS = 5_000;

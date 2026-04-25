@@ -1,5 +1,9 @@
-// Fairness jitter for the purchase admission path.
-// See docs/qa/phase-9-anti-bot.md §2.
+// Admission-fairness jitter for the purchase path.
+//
+// Adding 0–500 ms of uniform jitter before the row-lock randomises the
+// admission order inside that window, so a bot fastest-by-network can no
+// longer reliably win a sold-out drop. Cost: ~250 ms median latency on
+// the purchase path; humans don't notice, bots lose their edge.
 
 export const FAIRNESS_JITTER_MS = 500;
 

@@ -3,7 +3,6 @@ import { Decimal, ZERO } from "@/lib/money";
 // Pack reveal P&L — two views on the same 5-card pack:
 //   atPull  = Σ(pricedCaptured) − tierPrice   (locked at purchase)
 //   current = Σ(basePrice)      − tierPrice   (live as of this read)
-// Phase 2 reads basePrice statically; Phase 3 will start moving it.
 
 export interface RevealPnlCard {
   pricedCaptured: Decimal | string;

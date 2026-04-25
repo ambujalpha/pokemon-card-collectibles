@@ -2,7 +2,8 @@ import type { TierName } from "@/lib/rarity-weights";
 
 // "Win" = pack payout ≥ WIN_FRACTION × tier price.
 // Floor = minimum share of packs that must be wins under the solver output.
-// See docs/economics/ECONOMICS_SHIFT.md §1.4.
+// Higher tiers have stricter floors: a $50 buyer should expect more
+// frequent wins than a $5 one.
 
 export const WIN_FRACTION = 0.6;
 

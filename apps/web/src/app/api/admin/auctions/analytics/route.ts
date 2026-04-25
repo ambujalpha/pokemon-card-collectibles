@@ -8,8 +8,7 @@ const SNIPE_WINDOW_SEC = 30;
 // GET /api/admin/auctions/analytics?window=7d|30d|all
 //
 // Returns participation, final-vs-market ratio distribution, snipe rate
-// (% of bids placed in last 30s before close), and flag-rate counts. The
-// shape lines up with what Phase 12's `Fraud` tab will render.
+// (% of bids placed in last 30s before close), and flag-rate counts.
 export async function GET(request: Request) {
   const session = await getCurrentUser();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });

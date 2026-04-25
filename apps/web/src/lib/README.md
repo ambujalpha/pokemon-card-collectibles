@@ -19,9 +19,39 @@ Server-side utilities used by API routes and server components. Client component
 | File | Purpose |
 |------|---------|
 | `rarity-map.ts` | Maps raw pokemontcg.io rarity strings ("Illustration Rare" etc.) to our 5-way enum. |
-| `rarity-weights.ts` | **Auto-generated** by `scripts/calibrate-rarity.ts` — per-tier rarity distribution + pity rules + tier prices + calibrated EV. Do not edit by hand. |
-| `pack-picker.ts` | Seeded RNG pack generator — `pickCards(tier, pool, rng)` returns 5 cards honouring weights + pity. Pure; tested. |
+| `rarity-weights.ts` | **Auto-generated** by `scripts/calibrate-rarity.ts` — per-tier rarity distribution + pity rules + tier prices + calibrated EV. Used as the `baseShape` seed for the solver and as the fallback when no active `pack_weight_versions` row exists. Do not edit by hand. |
+| `active-weights.ts` | Reads the *active* `pack_weight_versions` row for a tier, with a 60 s process-local TTL cache. Pinned-version lookup for audit/reveal paths. `invalidateActiveWeights()` is called by the rebalance route. |
+| `pack-picker.ts` | Seeded RNG pack generator — `pickCards(tier, pool, rng)` (static weights) and `pickCardsWithWeights(tier, pool, weights, rng)` (caller-supplied vector, used by the solver-driven purchase path). Pure; tested. |
 | `drop-status.ts` | Derives real drop status (`SCHEDULED/LIVE/ENDED/SOLD_OUT`) from `startsAt/endsAt/remaining` + `now`. `drops.status` is a denormalised cache; this is authoritative. |
+
+### Economics solver
+| File | Purpose |
+|------|---------|
+| `economics/solver.ts` | Closed-form per-tier weight solver. Inputs: tier price, target margin, bucket means, `baseShape`, win-rate floor. Output: weight vector + realised margin + `constraintBinding`. Pure; tested. |
+| `economics/winRate.ts` | `WIN_FRACTION` (= 0.6 of tier price) + per-tier `WIN_RATE_FLOORS` (0.40 / 0.50 / 0.60). |
+| `economics/simulate.ts` | Seeded Monte-Carlo over N pack openings (`mulberry32`). Used by tests and by the admin simulate route. |
+| `economics/bucket-means.ts` | DB read of mean card price per bucket from the latest `price_snapshots` row per card; falls back to `cards.base_price`. |
+
+### Anti-bot + fairness (admission)
+| File | Purpose |
+|------|---------|
+| `ratelimit.ts` | Sliding-window-log rate limiter via Redis Lua. `checkLimit(key, opts)` + `checkLimits(specs[])`. Atomic prune→count→add. |
+| `fairness.ts` | `jitter(maxMs = 500)` admission helper — randomises order before the row-lock so bot network speed loses its edge. |
+| `behavioralSignals.ts` | Four-signal risk scorer (rapidPurchase / freshSession / multiAccount / fastReveal). Threshold `100`; no single signal can flag. UA hashed via SHA-256[:16]. |
+
+### Auction integrity
+| File | Purpose |
+|------|---------|
+| `auction-math.ts` | `minNextBid` (5% floor $0.10), `applyAntiSnipe(now, closesAt, extensions)`, `computeAuctionFee` (10% ceil), `resolveDuration` (`2m/5m/10m` presets). |
+| `auction-integrity.ts` | 5× fat-finger overbid cap, 2 s per-user-per-auction Redis lock (`tryClaimBidSlot`), sealed-window detection + redaction helpers. |
+| `wash-trade-detect.ts` | Three post-close heuristics (`repeat_pair`, `thin_low_clearance`, `linked_high_clearance`) writing to `auction_flags`. Review queue, never auto-actions. |
+
+### Provably fair pack openings
+| File | Purpose |
+|------|---------|
+| `fairness/commit.ts` | `newCommit()`, `verifyCommit()`, `sha256Hex()` — server seed via `crypto.randomBytes(32)`. |
+| `fairness/roll.ts` | Deterministic HMAC-SHA-256 roll — 5 × 48-bit uniforms per chain, mapped through pinned weights and a sorted card pool. Same maths as the browser verifier. |
+| `chi-squared.ts` | Pure GOF + Wilson–Hilferty p-value for the fairness audit endpoint and dashboard alerts. |
 
 ### Pack reveal
 | File | Purpose |
@@ -36,20 +66,20 @@ Server-side utilities used by API routes and server components. Client component
 |------|---------|
 | `pricing.ts` | `fetchSetPrices(setCode)` (pokemontcg.io), `refreshAllCards({ jitter })` orchestrator, `buildChanges` pure diff, `getCachedPrice(cardId)` cache-through read, `invalidatePriceCache` (SCAN + UNLINK). |
 
-### Marketplace + auctions
+### Marketplace
 | File | Purpose |
 |------|---------|
 | `marketplace-fee.ts` | `computeTradeFee(ask)` → 5% ceil-to-cent fee + sellerNet. |
-| `auction-math.ts` | `minNextBid` (5% floor $0.10), `applyAntiSnipe(now, closesAt, extensions)`, `computeAuctionFee` (10% ceil), `resolveDuration` (`2m/5m/10m` presets). |
 
 ### Admin dashboard
 | File | Purpose |
 |------|---------|
-| `economics.ts` | `computeEconomics(window)` aggregates ledger + sales for the admin dashboard. `snapshotToCsv` exports as flat CSV. `windowSince` resolves `today/7d/30d/all`. |
+| `economics.ts` | `computeEconomics(window)` aggregates ledger + sales for the Revenue tab. `snapshotToCsv` exports as flat CSV. `windowSince` resolves `today/7d/30d/all`. |
+| `admin-guard.ts` | Shared admin auth gate — `requireAdmin()` returns either `{ ok: true, userId }` or a 401/403 short-circuit response. |
+| `alerts.ts` | Threshold constants + three pure evaluators (`evalMarginDrift`, `evalChiSquared`, `evalBotSpike`) returning null / yellow / red. `persistAlert` writes deduplicated rows to `admin_alerts`. |
 
 ### Tests
-Tests live next to their subject as `*.test.ts`. Run with `pnpm test` (or `pnpm test:watch`).
-`pack-picker.test.ts`, `rarity-map.test.ts`, `reveal-order.test.ts`, `reveal-pnl.test.ts`, `pricing.test.ts`, `spend-allocation.test.ts`, `marketplace-fee.test.ts`, `auction-math.test.ts`, `economics.test.ts` — 49 tests total.
+Tests live next to their subject as `*.test.ts`. Run with `pnpm test` (or `pnpm test:watch`). 105 cases across 17 files.
 
 ## Rules for new files
 

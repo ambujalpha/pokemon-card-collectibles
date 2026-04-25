@@ -1,5 +1,5 @@
 // Pure chi-squared goodness-of-fit, used by the fairness audit endpoint and
-// the Phase 12 dashboard. Avoids pulling in a stats library.
+// the admin dashboard. Avoids pulling in a stats library.
 //
 // Returns the chi-squared statistic, degrees of freedom, and an approximate
 // upper-tail p-value via the Wilson–Hilferty cube-root transform — accurate

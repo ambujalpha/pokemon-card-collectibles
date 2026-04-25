@@ -178,6 +178,111 @@ One live auction per `user_card` (unique index). `current_bid` + `current_bidder
 Append-only bid history. 50 latest surface on `/auctions/:id`.
 **Indexes:** `(auction_id, created_at DESC)`, `(bidder_id, created_at DESC)`.
 
+### `pack_weight_versions`
+Per-tier rarity weight vectors solved from current market prices. The
+purchase route reads the active row and pins its id onto every new
+`user_packs` row. Re-solving creates a new row and flips `is_active` —
+already-purchased packs keep their old version pointer, so a rebalance
+can never alter what an unrevealed pack will open.
+| Column                | Purpose |
+|-----------------------|---------|
+| `tier`                | STARTER / PREMIUM / ULTRA |
+| `weights_json`        | jsonb — 5-bucket weight vector |
+| `solved_for_prices_at`| `MAX(price_snapshots.refreshed_at)` at solve time |
+| `ev_per_pack_usd`     | EV the solver expects under these weights |
+| `target_margin`       | tier's target margin (35/25/15%) |
+| `realised_margin`     | what the solver actually delivers (≥ target if a constraint binds) |
+| `constraint_binding`  | `winRateFloor` / `lowMax` / null |
+| `is_active`           | exactly one true row per tier at any time |
+
+**Indexes:** `(tier, is_active)`.
+**FK:** `user_packs.weight_version_id` → `pack_weight_versions.id` (Restrict).
+
+### `user_risk`
+Per-user behavioural risk score, updated atomically on signal events
+(rapid purchase, fresh-session purchase, multi-account, fast reveal).
+`flagged` flips when score ≥ 100; an admin can review and reset.
+| Column         | Purpose |
+|----------------|---------|
+| `user_id`      | PK — one row per scored user |
+| `score`        | accumulated weight |
+| `flagged`      | `score ≥ 100` |
+| `signals_json` | jsonb — running counts per signal kind |
+| `last_updated` | last signal application |
+
+**Indexes:** `(flagged, last_updated)`.
+
+### `account_links`
+`(user_id, ip, user_agent_hash)` upserted on each purchase. Used by the
+multi-account heuristic and the `Fraud` dashboard tab to find clusters of
+≥ 3 distinct users sharing an `(ip, ua_hash)` pair within 24h.
+| Column           | Purpose |
+|------------------|---------|
+| `user_id`        | the account that touched this fingerprint |
+| `ip`             | client IP (NAT-shared in real world) |
+| `user_agent_hash`| `sha256(UA)[:16]` — never raw UA |
+| `seen_count`     | bumped on each subsequent visit |
+| `first_seen` / `last_seen` | window boundaries |
+
+**Unique:** `(user_id, ip, user_agent_hash)`. **Indexes:** `(ip, user_agent_hash)`.
+
+### `auction_flags`
+Review queue for wash-trade detection. Three reasons emitted on auction
+close: `repeat_pair` (same A↔B in ≥ 3 closed auctions / 7d),
+`thin_low_clearance` (< 50 % market AND < 2 unique bidders),
+`linked_high_clearance` (> 3× market AND winner shares an `account_links`
+row with the seller). **Never auto-action** — admin reviews and clears.
+| Column         | Purpose |
+|----------------|---------|
+| `auction_id`   | which auction tripped the rule |
+| `reason`       | enum-like string above |
+| `detail_json`  | jsonb — final bid, market price, ids, etc. |
+| `reviewed_at` / `reviewed_by` | set when an admin acks |
+
+**Indexes:** `(auction_id)`, `(reviewed_at)`.
+
+### `pack_fairness`
+Per-pack commit-reveal record for provably fair openings. The server seed
+is generated at purchase, hashed (`SHA-256`), and stored alongside the
+client seed and the pack id (used as the nonce). The seed itself is
+**not** exposed on the public endpoint until `revealed_at` is set by the
+reveal route. The browser verifier at `/verify/pack/:id` reproduces the
+deterministic roll using only public information after reveal.
+| Column              | Purpose |
+|---------------------|---------|
+| `user_pack_id`      | PK — one row per pack |
+| `server_seed_hash`  | SHA-256 of `server_seed` — public from purchase onward |
+| `server_seed`       | nullable to outsiders pre-reveal; revealed at reveal |
+| `client_seed`       | client-supplied or auto-generated — public |
+| `nonce`             | `user_pack_id` |
+| `weight_version_id` | which `pack_weight_versions` row was used |
+| `committed_at` / `revealed_at` | timeline |
+
+**Indexes:** `(revealed_at)`.
+
+### `fairness_audit_log`
+Aggregated rarity counts per tier per window — populated by a future
+nightly aggregator. The live `/api/fairness/audit` endpoint computes
+chi-squared directly from `pack_cards` joined to `cards` for now; this
+table is reserved for very-large windows where live aggregation gets
+expensive.
+
+### `admin_alerts`
+Surfaces threshold-band events from the dashboard's evaluator: margin
+drift outside ±3 / ±6 pp, fairness chi-squared p-value below 0.05 / 0.01,
+bot flag rate above 1.5× / 2× the 7d baseline. Insert is deduplicating —
+re-evaluating doesn't spam unacknowledged alerts of the same `(kind,
+detail.tier)` pair.
+| Column          | Purpose |
+|-----------------|---------|
+| `kind`          | `margin_drift` / `chi_squared_drift` / `bot_flag_rate_spike` |
+| `severity`      | `yellow` / `red` |
+| `message`       | reviewer-facing one-liner |
+| `detail_json`   | jsonb — kind-specific payload |
+| `acknowledged_at` / `acknowledged_by` | set by `POST /api/admin/alerts/:id/ack` |
+
+**Indexes:** `(acknowledged_at, created_at)`, `(kind, created_at)`.
+
 ## Money and precision
 
 - Column type: `DECIMAL(18,4)` everywhere. Never `float` / `double`.
@@ -186,10 +291,11 @@ Append-only bid history. 50 latest surface on `/auctions/:id`.
 
 ## Concurrency invariants
 
-1. **Drop purchase** — `SELECT ... FOR UPDATE` on `drops` row, balance check + decrement + ledger rows all in one tx.
+1. **Drop purchase** — `SELECT ... FOR UPDATE` on `drops` row, balance check + decrement + ledger rows all in one tx. Per-user purchase rate-limit check (Redis sliding-window-log) and admission jitter happen *before* the tx so the row-lock contention window is randomised.
 2. **Listing purchase** — `SELECT ... FOR UPDATE` on `listings` row; `users` rows locked in id-sorted order to avoid deadlock with concurrent purchases.
-3. **Auction bid** — `SELECT ... FOR UPDATE` on `auctions` row; bidder + previous bidder locked in id-sorted order; self-raise holds only the delta.
-4. **Auction settle** — `SELECT ... FOR UPDATE SKIP LOCKED` on `auctions` where `closes_at <= now()`; overlapping ticks skip rows that another tx has claimed.
+3. **Auction bid** — `SELECT ... FOR UPDATE` on `auctions` row; bidder + previous bidder locked in id-sorted order; self-raise holds only the delta. A 2-second per-user-per-auction Redis lock blocks micro-increment spam outside the row-lock.
+4. **Auction settle** — `SELECT ... FOR UPDATE SKIP LOCKED` on `auctions` where `closes_at <= now()`; overlapping ticks skip rows that another tx has claimed. Wash-trade detection runs *after* the tx commits so detector errors can never roll back settlement.
+5. **Solver rebalance** — `pack_weight_versions` insert + `is_active` flip happens in a single tx with `updateMany` deactivating prior rows. The process-local active-weights cache is invalidated after commit; TTL self-heals if invalidation is missed.
 
 All atomic paths hold their transaction for under ~1s in practice. Timeout is 10–15s per tx.
 
@@ -204,7 +310,12 @@ All atomic paths hold their transaction for under ~1s in practice. Timeout is 10
 | Collection view | — (pure read) | `user_cards`, `cards`, `listings` |
 | Marketplace listings | `listings`, `user_cards` (transfer), `ledger` | `user_cards`, `cards`, `users` |
 | Auctions | `auctions`, `bids`, `user_cards` (transfer at close), `ledger` | same |
-| Admin dashboard | — | `ledger`, `user_packs`, `drops`, `auctions`, `users` |
+| Admin dashboard | `admin_alerts` | `ledger`, `user_packs`, `drops`, `auctions`, `users` |
+| Pack economics solver | `pack_weight_versions`, `admin_alerts` | `cards`, `price_snapshots`, `user_packs`, `pack_cards` |
+| Anti-bot rate limit / risk | `user_risk`, `account_links` | `user_risk` |
+| Auction integrity (wash-trade) | `auction_flags` | `auctions`, `bids`, `account_links`, `cards` |
+| Provably fair pack roll | `pack_fairness` | `pack_fairness`, `pack_weight_versions`, `cards` |
+| Fairness audit | `fairness_audit_log` (future) | `pack_cards`, `cards`, `pack_weight_versions` |
 
 ## Supabase URL split
 

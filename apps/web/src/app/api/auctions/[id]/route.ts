@@ -43,8 +43,9 @@ export async function GET(
   });
   if (!auction) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  // Phase 10: redact bid leaderboard during the sealed final-minute window
-  // to neutralise reactive sniping. See docs/qa/phase-10-auction-integrity.md.
+  // Redact bid leaderboard during the sealed final-minute window so
+  // reactive snipers can't see the high bid in real time. The countdown
+  // is preserved via `closesAt` and the `sealed` flag flips the UI.
   const sealed = auction.status === "LIVE" && isInSealedWindow(new Date(), auction.closesAt);
 
   return NextResponse.json({

@@ -4,7 +4,6 @@ import { Rarity } from "@prisma/client";
 // 5-bucket taxonomy so rarity weights in rarity-weights.ts stay simple and
 // auditable. The calibration script tunes weights against real prices, so the
 // bucket mapping primarily drives which cards sit in which bucket, not the EV.
-// See docs/plan/PHASE_1.md §2.2 for the rationale.
 export const RARITY_MAP: Record<string, Rarity> = {
   Common: Rarity.COMMON,
   Uncommon: Rarity.UNCOMMON,
