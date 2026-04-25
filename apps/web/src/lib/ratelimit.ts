@@ -53,6 +53,20 @@ export interface CheckLimitOptions {
   member?: string;
 }
 
+// Wall-clock budget for the Redis call. With maxRetriesPerRequest=null on
+// the client (set so transient ECONNRESETs don't fail-fast), ioredis would
+// otherwise queue commands forever while reconnecting — which appears as
+// "the purchase is stuck" in the UI. 1.5s is well above a healthy round-
+// trip and short enough that humans don't notice on the failure path.
+const RATELIMIT_TIMEOUT_MS = 1500;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label}: timeout after ${ms}ms`)), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
+
 export async function checkLimit(
   key: string,
   opts: CheckLimitOptions,
@@ -61,15 +75,21 @@ export async function checkLimit(
   const windowMs = opts.windowSec * 1000;
   const member = opts.member ?? `${now}:${Math.random().toString(36).slice(2, 10)}`;
 
-  const raw = (await redis.eval(
-    SCRIPT,
-    1,
-    key,
-    String(now),
-    String(windowMs),
-    String(opts.max),
-    member,
-  )) as [number, number, number];
+  // Fail OPEN on Redis transport errors *and* timeouts. Rate-limiting is
+  // defence-in-depth; if Redis is flaky we'd rather admit a few extra
+  // calls than 500 / hang the user's purchase. The Upstash REST middleware
+  // does the same; together they're the floor.
+  let raw: [number, number, number];
+  try {
+    raw = (await withTimeout(
+      redis.eval(SCRIPT, 1, key, String(now), String(windowMs), String(opts.max), member),
+      RATELIMIT_TIMEOUT_MS,
+      "ratelimit",
+    )) as [number, number, number];
+  } catch (err) {
+    console.warn("ratelimit: bypassing on redis error:", err instanceof Error ? err.message : err);
+    return { allowed: true, count: 0, resetAt: now, retryAfterSec: 0 };
+  }
 
   const allowed = raw[0] === 1;
   const count = Number(raw[1]);

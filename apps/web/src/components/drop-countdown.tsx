@@ -15,18 +15,22 @@ function formatHms(ms: number): string {
 
 export function DropCountdown({ to, label = "Opens in" }: { to: string; label?: string }) {
   const target = new Date(to).getTime();
-  const [now, setNow] = useState(() => Date.now());
+  // Defer time read to after mount so SSR and the first client render produce
+  // identical HTML (no hydration mismatch). Until then, show "—".
+  const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
+    setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  const diff = target - now;
   return (
     <span className="inline-flex items-center gap-1 text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
       <span>{label}</span>
-      <span className="font-medium text-zinc-900 dark:text-zinc-100">{formatHms(diff)}</span>
+      <span className="font-medium text-zinc-900 dark:text-zinc-100">
+        {now === null ? "—" : formatHms(target - now)}
+      </span>
     </span>
   );
 }

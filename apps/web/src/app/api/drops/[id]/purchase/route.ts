@@ -8,7 +8,7 @@ import { jitter } from "@/lib/fairness";
 import { newCommit } from "@/lib/fairness/commit";
 import { applyRollToPool, rollPack } from "@/lib/fairness/roll";
 import { Decimal } from "@/lib/money";
-import { TIER_PRICES_USD } from "@/lib/rarity-weights";
+import { TIER_PITY, TIER_PRICES_USD } from "@/lib/rarity-weights";
 import { checkLimits } from "@/lib/ratelimit";
 import { emitToRoom } from "@/lib/ws-emit";
 
@@ -140,8 +140,11 @@ export async function POST(
         select: { id: true, purchasedAt: true },
       });
 
-      // Apply deterministic roll using the new pack id as the nonce.
-      const roll = rollPack(commit.serverSeedHex, commit.clientSeed, userPack.id, weights);
+      // Apply deterministic roll using the new pack id as the nonce. Pity
+      // floor honours the tier guarantee (Premium ≥ RARE, Ultra ≥ EPIC) so
+      // a streak of low-rarity slots can't ruin a $20+ pack.
+      const tierName = tierFromPrisma(drop.pack_tier);
+      const roll = rollPack(commit.serverSeedHex, commit.clientSeed, userPack.id, weights, TIER_PITY[tierName]);
       const picks = applyRollToPool(roll, pool);
       if (picks.length !== CARDS_PER_PACK) {
         throw new Error(`fairness roll returned ${picks.length} cards`);

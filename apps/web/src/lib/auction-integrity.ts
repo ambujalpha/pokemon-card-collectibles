@@ -31,13 +31,31 @@ export function isExcessiveOverbid(
 
 export const MIN_BID_INTERVAL_SEC = 2;
 
+const BID_SLOT_TIMEOUT_MS = 1500;
+
 export async function tryClaimBidSlot(
   userId: string,
   auctionId: string,
 ): Promise<boolean> {
   const key = `bid:lastAt:${userId}:${auctionId}`;
-  const result = await redis.set(key, "1", "EX", MIN_BID_INTERVAL_SEC, "NX");
-  return result === "OK";
+  // Fail OPEN on Redis transport errors *and* timeouts. Self-bid rejection
+  // + balance checks still apply inside the row-locked transaction.
+  try {
+    const result = await Promise.race<string | null | "TIMEOUT">([
+      redis.set(key, "1", "EX", MIN_BID_INTERVAL_SEC, "NX"),
+      new Promise<"TIMEOUT">((resolve) =>
+        setTimeout(() => resolve("TIMEOUT"), BID_SLOT_TIMEOUT_MS),
+      ),
+    ]);
+    if (result === "TIMEOUT") {
+      console.warn("bid-slot: bypassing on redis timeout");
+      return true;
+    }
+    return result === "OK";
+  } catch (err) {
+    console.warn("bid-slot: bypassing on redis error:", err instanceof Error ? err.message : err);
+    return true;
+  }
 }
 
 // ─── Sealed-bid final phase ────────────────────────────────────────────────

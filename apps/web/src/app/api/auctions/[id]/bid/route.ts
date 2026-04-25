@@ -87,10 +87,18 @@ export async function POST(
 
     // Validate amount against increment rule.
     if (a.current_bid === null) {
-      if (!amount.eq(new Prisma.Decimal(a.starting_bid))) {
+      // First bid: must clear the starting bid floor. We also enforce the
+      // 5× cap here so a fat-finger entry (typing $50 on a $0.19 starter)
+      // is rejected before it sets a deceiving high water mark for the
+      // increment rule to chase.
+      const start = new Prisma.Decimal(a.starting_bid);
+      if (amount.lt(start)) {
+        return { error: "bid_too_low" as const, minBid: start.toFixed(4) };
+      }
+      if (isExcessiveOverbid(a.starting_bid, amount)) {
         return {
-          error: "must_match_starting" as const,
-          required: new Prisma.Decimal(a.starting_bid).toFixed(4),
+          error: "excessive_overbid" as const,
+          maxAllowed: start.mul(5).toFixed(4),
         };
       }
     } else {

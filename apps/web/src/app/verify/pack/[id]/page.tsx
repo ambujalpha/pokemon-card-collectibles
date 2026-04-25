@@ -4,6 +4,8 @@ import { use, useEffect, useMemo, useState } from "react";
 
 type FairnessApi = {
   purchaseId: string;
+  tier: string;
+  pity: "NONE" | "RARE" | "EPIC";
   serverSeedHash: string;
   serverSeed: string | null;
   clientSeed: string;
@@ -59,6 +61,7 @@ export default function VerifyPackPage({ params }: { params: Promise<{ id: strin
       fairness.nonce,
       fairness.weights,
       pool,
+      fairness.pity,
     );
     const actual = [...contents.cards].sort((a, b) => a.position - b.position).map((c) => c.cardId);
     const cardsOk = expected.length === actual.length && expected.every((id, i) => id === actual[i]);
@@ -107,12 +110,18 @@ async function verifyHash(serverSeedHex: string, expectedHashHex: string): Promi
   return bytesToHex(new Uint8Array(digest)) === expectedHashHex.toLowerCase();
 }
 
+type PityFloor = "NONE" | "RARE" | "EPIC";
+const RARITY_ORDER: Record<string, number> = {
+  COMMON: 0, UNCOMMON: 1, RARE: 2, EPIC: 3, LEGENDARY: 4,
+};
+
 async function reproduceCards(
   serverSeedHex: string,
   clientSeed: string,
   nonce: string,
   weights: Record<string, number>,
   pool: Array<{ id: string; rarityBucket: string }>,
+  pity: PityFloor = "NONE",
 ): Promise<string[]> {
   const rarityBytes = await hmacSha256(serverSeedHex, `${clientSeed}:${nonce}:rarity`);
   const cardBytes = await hmacSha256(serverSeedHex, `${clientSeed}:${nonce}:card`);
@@ -123,16 +132,38 @@ async function reproduceCards(
   for (const c of pool) byBucket[c.rarityBucket]?.push({ id: c.id });
   for (const b of BUCKETS) byBucket[b]!.sort((a, c) => a.id.localeCompare(c.id));
 
+  // Step 1: per-slot rarity from the rarity uniform.
+  const slotRarities: string[] = [];
+  const cardUniforms: number[] = [];
+  for (let i = 0; i < 5; i++) {
+    slotRarities.push(pickRarity(bytesToUniform48(rarityBytes, i * 6), weights));
+    cardUniforms.push(bytesToUniform48(cardBytes, i * 6));
+  }
+
+  // Step 2: pity upgrade — same maths as server lib/fairness/roll.ts.
+  if (pity !== "NONE") {
+    const floor = pity === "RARE" ? RARITY_ORDER.RARE! : RARITY_ORDER.EPIC!;
+    const maxRarity = Math.max(...slotRarities.map((r) => RARITY_ORDER[r] ?? 0));
+    if (maxRarity < floor) {
+      let lowestIdx = 0;
+      for (let i = 1; i < slotRarities.length; i++) {
+        if ((RARITY_ORDER[slotRarities[i]!] ?? 0) < (RARITY_ORDER[slotRarities[lowestIdx]!] ?? 0)) {
+          lowestIdx = i;
+        }
+      }
+      slotRarities[lowestIdx] = pity === "RARE" ? "RARE" : "EPIC";
+    }
+  }
+
+  // Step 3: card pick within the chosen bucket using the slot's card uniform.
   const out: string[] = [];
   for (let i = 0; i < 5; i++) {
-    const u1 = bytesToUniform48(rarityBytes, i * 6);
-    const u2 = bytesToUniform48(cardBytes, i * 6);
-    const r = pickRarity(u1, weights);
+    const r = slotRarities[i]!;
     let bucket = byBucket[r]!;
     if (bucket.length === 0) {
       for (const b of BUCKETS) if (byBucket[b]!.length > 0) { bucket = byBucket[b]!; break; }
     }
-    const idx = Math.floor(u2 * bucket.length);
+    const idx = Math.floor(cardUniforms[i]! * bucket.length);
     out.push(bucket[idx]!.id);
   }
   return out;

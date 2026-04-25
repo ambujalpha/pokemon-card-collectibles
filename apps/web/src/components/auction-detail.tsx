@@ -51,7 +51,10 @@ export function AuctionDetail({ auctionId, balance }: { auctionId: string; balan
   const [flash, setFlash] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState("");
-  const [nowTick, setNowTick] = useState(() => Date.now());
+  // Initialise to 0 (deterministic) and set to real Date.now() in an effect.
+  // Until the effect fires, the early "Loading…" branch (line ~139) renders,
+  // so this value never hits the SSR/hydration path.
+  const [nowTick, setNowTick] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
   const triggerReload = useCallback(() => setReloadNonce((n) => n + 1), []);
 
@@ -86,6 +89,7 @@ export function AuctionDetail({ auctionId, balance }: { auctionId: string; balan
 
   // Per-second countdown tick. Separate from WS so timer is accurate.
   useEffect(() => {
+    setNowTick(Date.now());
     const h = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(h);
   }, []);

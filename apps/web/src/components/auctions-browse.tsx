@@ -38,11 +38,14 @@ export function AuctionsBrowse() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
-  const [nowTick, setNowTick] = useState(() => Date.now());
+  // Set inside the effect so SSR + first client render are deterministic
+  // (avoids hydration mismatch on the countdown text).
+  const [nowTick, setNowTick] = useState(0);
   const triggerReload = useCallback(() => setReloadNonce((n) => n + 1), []);
   const rarityKey = useMemo(() => [...rarities].sort().join(","), [rarities]);
 
   useEffect(() => {
+    setNowTick(Date.now());
     const h = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(h);
   }, []);
