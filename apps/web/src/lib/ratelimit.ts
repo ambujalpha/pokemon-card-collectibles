@@ -67,6 +67,18 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   });
 }
 
+// Throttle the same warning to once per 30s so a flapping connection
+// doesn't spray hundreds of identical lines into the log.
+const lastWarn = new Map<string, number>();
+function warnOnce(label: string, msg: string): void {
+  const k = `${label}:${msg}`;
+  const now = Date.now();
+  const last = lastWarn.get(k) ?? 0;
+  if (now - last < 30_000) return;
+  lastWarn.set(k, now);
+  console.warn(`${label}: bypassing on redis error: ${msg}`);
+}
+
 export async function checkLimit(
   key: string,
   opts: CheckLimitOptions,
@@ -74,6 +86,13 @@ export async function checkLimit(
   const now = opts.now ?? Date.now();
   const windowMs = opts.windowSec * 1000;
   const member = opts.member ?? `${now}:${Math.random().toString(36).slice(2, 10)}`;
+
+  // Fast path: if ioredis already knows the socket is dead, skip the
+  // round-trip entirely. Saves the `Stream isn't writeable` log churn.
+  if (redis.status !== "ready") {
+    warnOnce("ratelimit", `socket status=${redis.status}`);
+    return { allowed: true, count: 0, resetAt: now, retryAfterSec: 0 };
+  }
 
   // Fail OPEN on Redis transport errors *and* timeouts. Rate-limiting is
   // defence-in-depth; if Redis is flaky we'd rather admit a few extra
@@ -87,7 +106,7 @@ export async function checkLimit(
       "ratelimit",
     )) as [number, number, number];
   } catch (err) {
-    console.warn("ratelimit: bypassing on redis error:", err instanceof Error ? err.message : err);
+    warnOnce("ratelimit", err instanceof Error ? err.message : String(err));
     return { allowed: true, count: 0, resetAt: now, retryAfterSec: 0 };
   }
 

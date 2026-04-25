@@ -33,10 +33,26 @@ export const MIN_BID_INTERVAL_SEC = 2;
 
 const BID_SLOT_TIMEOUT_MS = 1500;
 
+// Throttle warnings — see ratelimit.ts for the same pattern.
+const lastWarn = new Map<string, number>();
+function warnOnce(msg: string): void {
+  const now = Date.now();
+  const last = lastWarn.get(msg) ?? 0;
+  if (now - last < 30_000) return;
+  lastWarn.set(msg, now);
+  console.warn(`bid-slot: bypassing on redis error: ${msg}`);
+}
+
 export async function tryClaimBidSlot(
   userId: string,
   auctionId: string,
 ): Promise<boolean> {
+  // Fast path: if the socket is already dead, don't even try.
+  if (redis.status !== "ready") {
+    warnOnce(`socket status=${redis.status}`);
+    return true;
+  }
+
   const key = `bid:lastAt:${userId}:${auctionId}`;
   // Fail OPEN on Redis transport errors *and* timeouts. Self-bid rejection
   // + balance checks still apply inside the row-locked transaction.
@@ -48,12 +64,12 @@ export async function tryClaimBidSlot(
       ),
     ]);
     if (result === "TIMEOUT") {
-      console.warn("bid-slot: bypassing on redis timeout");
+      warnOnce("timeout");
       return true;
     }
     return result === "OK";
   } catch (err) {
-    console.warn("bid-slot: bypassing on redis error:", err instanceof Error ? err.message : err);
+    warnOnce(err instanceof Error ? err.message : String(err));
     return true;
   }
 }

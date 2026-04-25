@@ -28,6 +28,7 @@ function fakeEval(_script: string, _numKeys: number, key: string, nowS: string, 
 
 vi.mock("@/lib/redis", () => ({
   redis: {
+    status: "ready",
     eval: (...args: unknown[]) => Promise.resolve(fakeEval(
       args[0] as string,
       args[1] as number,
