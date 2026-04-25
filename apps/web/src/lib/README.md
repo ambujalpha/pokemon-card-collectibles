@@ -35,7 +35,8 @@ Server-side utilities used by API routes and server components. Client component
 ### Anti-bot + fairness (admission)
 | File | Purpose |
 |------|---------|
-| `ratelimit.ts` | Sliding-window-log rate limiter via Redis Lua. `checkLimit(key, opts)` + `checkLimits(specs[])`. Atomic prune→count→add. |
+| `ratelimit.ts` | **Node-runtime** sliding-window-log rate limiter via Redis Lua over ioredis. `checkLimit(key, opts)` + `checkLimits(specs[])`. Atomic prune→count→add, 1.5 s wall-clock timeout, fail-open on transport errors. |
+| `ratelimit-edge.ts` | **Edge-runtime** equivalent via `@upstash/redis` REST. Same Lua script, same fail-open semantics. Used by `middleware.ts` because ioredis (TCP) can't load on Edge. |
 | `fairness.ts` | `jitter(maxMs = 500)` admission helper — randomises order before the row-lock so bot network speed loses its edge. |
 | `behavioralSignals.ts` | Four-signal risk scorer (rapidPurchase / freshSession / multiAccount / fastReveal). Threshold `100`; no single signal can flag. UA hashed via SHA-256[:16]. |
 
@@ -43,14 +44,14 @@ Server-side utilities used by API routes and server components. Client component
 | File | Purpose |
 |------|---------|
 | `auction-math.ts` | `minNextBid` (5% floor $0.10), `applyAntiSnipe(now, closesAt, extensions)`, `computeAuctionFee` (10% ceil), `resolveDuration` (`2m/5m/10m` presets). |
-| `auction-integrity.ts` | 5× fat-finger overbid cap, 2 s per-user-per-auction Redis lock (`tryClaimBidSlot`), sealed-window detection + redaction helpers. |
+| `auction-integrity.ts` | 5× fat-finger overbid cap, 2 s per-user-per-auction Redis lock (`tryClaimBidSlot`) with 1.5 s wall-clock timeout + fail-open, sealed-window detection + redaction helpers. |
 | `wash-trade-detect.ts` | Three post-close heuristics (`repeat_pair`, `thin_low_clearance`, `linked_high_clearance`) writing to `auction_flags`. Review queue, never auto-actions. |
 
 ### Provably fair pack openings
 | File | Purpose |
 |------|---------|
 | `fairness/commit.ts` | `newCommit()`, `verifyCommit()`, `sha256Hex()` — server seed via `crypto.randomBytes(32)`. |
-| `fairness/roll.ts` | Deterministic HMAC-SHA-256 roll — 5 × 48-bit uniforms per chain, mapped through pinned weights and a sorted card pool. Same maths as the browser verifier. |
+| `fairness/roll.ts` | Deterministic HMAC-SHA-256 roll — 5 × 48-bit uniforms per chain, mapped through pinned weights and a sorted card pool. Includes a deterministic pity-floor step (Premium ≥ RARE, Ultra ≥ EPIC) that the browser verifier mirrors. |
 | `chi-squared.ts` | Pure GOF + Wilson–Hilferty p-value for the fairness audit endpoint and dashboard alerts. |
 
 ### Pack reveal

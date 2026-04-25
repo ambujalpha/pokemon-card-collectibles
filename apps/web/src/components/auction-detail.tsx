@@ -89,9 +89,10 @@ export function AuctionDetail({ auctionId, balance }: { auctionId: string; balan
 
   // Per-second countdown tick. Separate from WS so timer is accurate.
   useEffect(() => {
-    setNowTick(Date.now());
-    const h = setInterval(() => setNowTick(Date.now()), 1000);
-    return () => clearInterval(h);
+    const tick = () => setNowTick(Date.now());
+    const raf = requestAnimationFrame(tick);
+    const h = setInterval(tick, 1000);
+    return () => { cancelAnimationFrame(raf); clearInterval(h); };
   }, []);
 
   // Auto-refetch when the clock passes closesAt (close worker may be lagging).

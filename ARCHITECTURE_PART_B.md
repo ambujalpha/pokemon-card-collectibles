@@ -180,13 +180,31 @@ raw UA strings.
   clicker who also created the account 10 s ago and shares a UA with
   three other accounts is.
 
-### 2.5 Files
+### 2.5 Edge runtime constraint
+
+Next.js middleware runs on the **Edge runtime**, which can't load
+`ioredis` (Node-only — uses `net` sockets). Two limiters therefore
+co-exist:
+
+| Limiter | Runtime | Transport | Where it runs |
+|---|---|---|---|
+| `lib/ratelimit-edge.ts` | Edge | Upstash REST (HTTP / fetch) | `middleware.ts` per-IP floor |
+| `lib/ratelimit.ts` | Node | ioredis (TCP) | Inside route handlers (per-user purchase + 2 s bid lock) |
+
+Both run the same sliding-window-log Lua script — semantics are identical.
+Both **fail open** if the transport is unhealthy (missing env, ECONNRESET,
+timeout): admit the request, log a warning, let the row-locked DB
+transaction enforce the hard floor. This is a deliberate availability
+choice — defence-in-depth rate limits should never 500 a paying user.
+
+### 2.6 Files
 
 | Path | Purpose |
 |---|---|
-| `apps/web/src/lib/ratelimit.ts` | Sliding-window-log + multi-spec helper. |
+| `apps/web/src/lib/ratelimit.ts` | Node-side sliding-window-log + multi-spec helper. Wall-clock timeout, fail-open. |
+| `apps/web/src/lib/ratelimit-edge.ts` | Edge-safe variant via `@upstash/redis` REST client. Fail-open on missing env or transport error. |
 | `apps/web/src/lib/fairness.ts` | `jitter(maxMs)` admission helper. |
-| `apps/web/src/middleware.ts` | Per-IP floor on `/api/*`. |
+| `apps/web/src/middleware.ts` | Per-IP floor on `/api/*` using the Edge limiter. |
 | `apps/web/src/lib/behavioralSignals.ts` | Signal evaluators + risk-score upsert. |
 
 ---
@@ -200,10 +218,18 @@ Three layers run before the row-locked transaction:
 1. **2-second per-user-per-auction lock** in Redis (`SET NX EX 2`).
    Returning false means a second bid arrived within the window —
    responds 429 `bid_too_fast`.
-2. **5× overbid cap.** A bid more than 5× the current high is
-   rejected with 400 `excessive_overbid`. Almost always a typo
-   ($1.50 → $1500); the UI can prompt to confirm.
-3. **Self-bid rejection.** Already in Phase 6, retained.
+2. **5× overbid cap.** A bid more than 5× the current high (or the
+   starting bid, on the first bid) is rejected with 400
+   `excessive_overbid`. Almost always a typo ($1.50 → $1500); the UI
+   can prompt to confirm.
+3. **Self-bid rejection.** Seller can't bid on own auction, returns 400.
+
+First-bid validation is intentionally permissive: any amount ≥
+`starting_bid` is accepted (subject to the 5× cap). Subsequent bids
+must clear the 5%-of-current / $0.10 floor enforced by `minNextBid()`.
+Earlier the first bid had to *exactly* match `starting_bid`, which
+confused users; the increment rule + 5× cap give the same fat-finger
+protection without that rigidity.
 
 ### 3.2 Sealed-bid final minute
 
@@ -297,6 +323,16 @@ divided by `2^48` to give a uniform `[0,1)` per card slot. Slot uniform
 `pack_weight_versions`. Card uniform → index inside the bucket sorted
 by id (so the verifier can reproduce ordering deterministically).
 
+**Pity floor.** After per-slot rarity selection, a deterministic
+post-step honours each tier's promised minimum: Premium guarantees ≥ 1
+RARE-or-better, Ultra guarantees ≥ 1 EPIC-or-better. If the rolled
+slots don't reach the floor, the lowest-rarity slot is upgraded to
+exactly the floor rarity (tie-break: lowest slot index). The card pick
+inside the upgraded bucket reuses that slot's existing `cardUniform` —
+no extra entropy consumed, no commit invalidation. The browser
+verifier mirrors this step verbatim, so `/verify/pack/<id>` still
+matches when pity fires.
+
 ### 4.3 Browser-side verifier — no server trust
 
 `/verify/pack/:id` is a client component using only WebCrypto:
@@ -340,7 +376,7 @@ The same thresholds drive the dashboard's `chi_squared_drift` alert.
 | Path | Purpose |
 |---|---|
 | `apps/web/src/lib/fairness/commit.ts` | Server seed, hash, client-seed fallback. |
-| `apps/web/src/lib/fairness/roll.ts` | Deterministic HMAC roll + pool mapping. |
+| `apps/web/src/lib/fairness/roll.ts` | Deterministic HMAC roll + pity floor + pool mapping. |
 | `apps/web/src/lib/chi-squared.ts` | Pure GOF + Wilson–Hilferty p-value. |
 | `apps/web/src/app/api/fairness/[purchaseId]/route.ts` | Public commit/reveal record. |
 | `apps/web/src/app/api/fairness/audit/route.ts` | Per-tier chi-squared audit. |

@@ -152,6 +152,10 @@ export async function POST(
 
       // Persist the commit. server_seed stays in the DB, but never leaves
       // the server until reveal.
+      // versionId is either a uuid string or null. Cast both via the
+      // CASE expression so Postgres binds correctly when null is passed
+      // (the bare ${null} would arrive typed as text, mismatching the
+      // uuid column).
       await tx.$executeRaw`
         INSERT INTO pack_fairness (
           user_pack_id, server_seed_hash, server_seed,
@@ -162,7 +166,7 @@ export async function POST(
           ${commit.serverSeedHex},
           ${commit.clientSeed},
           ${userPack.id},
-          ${versionId}
+          CAST(${versionId} AS uuid)
         )
       `;
 
