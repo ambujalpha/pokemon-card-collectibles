@@ -24,7 +24,15 @@ export function pickCards<T extends PackPickerCard>(
   cardPool: readonly T[],
   rng: () => number = Math.random,
 ): T[] {
-  const weights = RARITY_WEIGHTS[tier];
+  return pickCardsWithWeights(tier, cardPool, RARITY_WEIGHTS[tier], rng);
+}
+
+export function pickCardsWithWeights<T extends PackPickerCard>(
+  tier: TierName,
+  cardPool: readonly T[],
+  weights: Record<Rarity, number>,
+  rng: () => number = Math.random,
+): T[] {
   const pity = TIER_PITY[tier];
 
   const byBucket: Record<Rarity, T[]> = {

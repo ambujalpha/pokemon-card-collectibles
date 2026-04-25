@@ -1,10 +1,11 @@
 import { PackTier, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
+import { getActiveWeights } from "@/lib/active-weights";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { Decimal } from "@/lib/money";
-import { pickCards } from "@/lib/pack-picker";
+import { pickCardsWithWeights } from "@/lib/pack-picker";
 import { TIER_PRICES_USD } from "@/lib/rarity-weights";
 import { emitToRoom } from "@/lib/ws-emit";
 
@@ -83,7 +84,11 @@ export async function POST(
       const pool = await tx.card.findMany({
         select: { id: true, rarityBucket: true, basePrice: true },
       });
-      const picks = pickCards(tierFromPrisma(drop.pack_tier), pool);
+      // Phase 8: draw against the currently active solver weights and pin the
+      // version on the pack so any post-rebalance audit reads the exact
+      // distribution this pack was opened against.
+      const { versionId, weights } = await getActiveWeights(tierFromPrisma(drop.pack_tier));
+      const picks = pickCardsWithWeights(tierFromPrisma(drop.pack_tier), pool, weights);
       if (picks.length !== CARDS_PER_PACK) {
         throw new Error(`pack-picker returned ${picks.length} cards, expected ${CARDS_PER_PACK}`);
       }
@@ -107,6 +112,7 @@ export async function POST(
         data: {
           userId: session.userId,
           dropId: drop.id,
+          weightVersionId: versionId,
         },
         select: { id: true, purchasedAt: true },
       });
