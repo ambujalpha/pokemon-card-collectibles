@@ -4,10 +4,15 @@ import { NextResponse } from "next/server";
 import { getActiveWeights } from "@/lib/active-weights";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { jitter } from "@/lib/fairness";
 import { Decimal } from "@/lib/money";
 import { pickCardsWithWeights } from "@/lib/pack-picker";
 import { TIER_PRICES_USD } from "@/lib/rarity-weights";
+import { checkLimits } from "@/lib/ratelimit";
 import { emitToRoom } from "@/lib/ws-emit";
+
+const PURCHASE_PER_USER_PER_MIN = 6;
+const PURCHASE_PER_USER_PER_HOUR = 20;
 
 const MAX_PACKS_PER_USER_PER_DROP = 5;
 const CARDS_PER_PACK = 5;
@@ -34,6 +39,24 @@ export async function POST(
   if (!UUID_RE.test(dropId)) {
     return NextResponse.json({ error: "invalid_id" satisfies PurchaseError }, { status: 400 });
   }
+
+  // Phase 9: per-user purchase rate limit (looser than the per-IP floor in
+  // middleware so office-NAT humans aren't blocked when one workspace mate
+  // bursts). See docs/qa/phase-9-anti-bot.md §1.
+  const rl = await checkLimits([
+    { key: `rl:purchase:user:${session.userId}:m`, windowSec: 60, max: PURCHASE_PER_USER_PER_MIN },
+    { key: `rl:purchase:user:${session.userId}:h`, windowSec: 3600, max: PURCHASE_PER_USER_PER_HOUR },
+  ]);
+  if (!rl.allowed) {
+    return new NextResponse(JSON.stringify({ error: "rate_limited" }), {
+      status: 429,
+      headers: { "Content-Type": "application/json", "Retry-After": String(rl.retryAfterSec) },
+    });
+  }
+
+  // Fairness jitter: randomise admission order inside a 0–500ms window so
+  // a bot's network-speed edge can't reliably win sold-out drops.
+  await jitter();
 
   try {
     const result = await prisma.$transaction(async (tx) => {

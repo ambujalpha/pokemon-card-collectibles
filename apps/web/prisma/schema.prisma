@@ -172,6 +172,33 @@ model UserPack {
   @@map("user_packs")
 }
 
+// ─── Phase 9: anti-bot risk + account linking ──────────────────────────────
+
+model UserRisk {
+  userId      String   @id @map("user_id") @db.Uuid
+  score       Int      @default(0)
+  flagged     Boolean  @default(false)
+  signalsJson Json     @default("{}") @map("signals_json")
+  lastUpdated DateTime @default(now()) @updatedAt @map("last_updated") @db.Timestamptz
+
+  @@index([flagged, lastUpdated])
+  @@map("user_risk")
+}
+
+model AccountLink {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  ip            String
+  userAgentHash String   @map("user_agent_hash")
+  seenCount     Int      @default(1) @map("seen_count")
+  firstSeen     DateTime @default(now()) @map("first_seen") @db.Timestamptz
+  lastSeen      DateTime @default(now()) @map("last_seen") @db.Timestamptz
+
+  @@unique([userId, ip, userAgentHash])
+  @@index([ip, userAgentHash])
+  @@map("account_links")
+}
+
 // ─── Phase 8: per-tier rarity weight versions (economics solver output) ─────
 
 model PackWeightVersion {
