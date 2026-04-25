@@ -1,6 +1,7 @@
 import { LedgerReason, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
+import { isInSealedWindow } from "@/lib/auction-integrity";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { emitToRoom } from "@/lib/ws-emit";
@@ -42,18 +43,25 @@ export async function GET(
   });
   if (!auction) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
+  // Phase 10: redact bid leaderboard during the sealed final-minute window
+  // to neutralise reactive sniping. See docs/qa/phase-10-auction-integrity.md.
+  const sealed = auction.status === "LIVE" && isInSealedWindow(new Date(), auction.closesAt);
+
   return NextResponse.json({
     id: auction.id,
     status: auction.status,
+    sealed,
     startingBid: new Prisma.Decimal(auction.startingBid).toFixed(4),
-    currentBid: auction.currentBid ? new Prisma.Decimal(auction.currentBid).toFixed(4) : null,
+    currentBid: sealed
+      ? null
+      : auction.currentBid ? new Prisma.Decimal(auction.currentBid).toFixed(4) : null,
     currentMarketPrice: new Prisma.Decimal(auction.userCard.card.basePrice).toFixed(4),
     startsAt: auction.startsAt.toISOString(),
     closesAt: auction.closesAt.toISOString(),
     closedAt: auction.closedAt?.toISOString() ?? null,
     extensions: auction.extensions,
     isOwn: auction.sellerId === session.userId,
-    isLeading: auction.currentBidderId === session.userId,
+    isLeading: sealed ? false : auction.currentBidderId === session.userId,
     iWon: auction.winnerId === session.userId,
     sellerEmail: auction.seller.email,
     winnerEmail: auction.winner?.email ?? null,
@@ -65,7 +73,7 @@ export async function GET(
       lastPricedAt: auction.userCard.card.lastPricedAt?.toISOString() ?? null,
       staleSince: auction.userCard.card.staleSince?.toISOString() ?? null,
     },
-    bids: auction.bids.map((b) => ({
+    bids: sealed ? [] : auction.bids.map((b) => ({
       id: b.id,
       amount: new Prisma.Decimal(b.amount).toFixed(4),
       bidder: b.bidder.email,

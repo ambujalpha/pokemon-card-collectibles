@@ -172,6 +172,50 @@ model UserPack {
   @@map("user_packs")
 }
 
+// ─── Phase 10: auction integrity flags ─────────────────────────────────────
+
+model AuctionFlag {
+  id         String    @id @default(uuid()) @db.Uuid
+  auctionId  String    @map("auction_id") @db.Uuid
+  reason     String
+  detailJson Json      @default("{}") @map("detail_json")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz
+  reviewedBy String?   @map("reviewed_by") @db.Uuid
+
+  @@index([auctionId])
+  @@index([reviewedAt])
+  @@map("auction_flags")
+}
+
+// ─── Phase 11: provably fair pack openings ─────────────────────────────────
+
+model PackFairness {
+  userPackId      String    @id @map("user_pack_id") @db.Uuid
+  serverSeedHash  String    @map("server_seed_hash")
+  serverSeed      String?   @map("server_seed")
+  clientSeed      String    @map("client_seed")
+  nonce           String
+  weightVersionId String?   @map("weight_version_id") @db.Uuid
+  committedAt     DateTime  @default(now()) @map("committed_at") @db.Timestamptz
+  revealedAt      DateTime? @map("revealed_at") @db.Timestamptz
+
+  @@index([revealedAt])
+  @@map("pack_fairness")
+}
+
+model FairnessAuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  packTier     PackTier @map("pack_tier")
+  rarityBucket Rarity   @map("rarity_bucket")
+  count        Int
+  windowStart  DateTime @map("window_start") @db.Timestamptz
+  windowEnd    DateTime @map("window_end") @db.Timestamptz
+
+  @@index([packTier, windowEnd])
+  @@map("fairness_audit_log")
+}
+
 // ─── Phase 9: anti-bot risk + account linking ──────────────────────────────
 
 model UserRisk {

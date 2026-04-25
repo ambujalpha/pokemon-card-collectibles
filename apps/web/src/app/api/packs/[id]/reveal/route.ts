@@ -60,6 +60,13 @@ export async function POST(
         data: { isRevealed: true },
       });
 
+      // Phase 11: stamp the fairness reveal time. The server seed has been
+      // sitting in pack_fairness since purchase; from this moment, the
+      // public fairness endpoint will return it.
+      await tx.$executeRaw`
+        UPDATE pack_fairness SET revealed_at = NOW() WHERE user_pack_id = ${row.id}::uuid
+      `;
+
       const packCards = await tx.packCard.findMany({
         where: { userPackId: row.id },
         orderBy: { position: "asc" },

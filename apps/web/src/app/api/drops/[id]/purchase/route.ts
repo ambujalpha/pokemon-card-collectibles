@@ -5,8 +5,9 @@ import { getActiveWeights } from "@/lib/active-weights";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { jitter } from "@/lib/fairness";
+import { newCommit } from "@/lib/fairness/commit";
+import { applyRollToPool, rollPack } from "@/lib/fairness/roll";
 import { Decimal } from "@/lib/money";
-import { pickCardsWithWeights } from "@/lib/pack-picker";
 import { TIER_PRICES_USD } from "@/lib/rarity-weights";
 import { checkLimits } from "@/lib/ratelimit";
 import { emitToRoom } from "@/lib/ws-emit";
@@ -111,10 +112,9 @@ export async function POST(
       // version on the pack so any post-rebalance audit reads the exact
       // distribution this pack was opened against.
       const { versionId, weights } = await getActiveWeights(tierFromPrisma(drop.pack_tier));
-      const picks = pickCardsWithWeights(tierFromPrisma(drop.pack_tier), pool, weights);
-      if (picks.length !== CARDS_PER_PACK) {
-        throw new Error(`pack-picker returned ${picks.length} cards, expected ${CARDS_PER_PACK}`);
-      }
+      // Phase 11: deterministic seeded roll. Server seed is committed-only
+      // until reveal; the same maths runs in the browser verifier.
+      const commit = newCommit(undefined);
 
       const remainingAfter = drop.remaining - 1;
       await tx.drop.update({
@@ -139,6 +139,29 @@ export async function POST(
         },
         select: { id: true, purchasedAt: true },
       });
+
+      // Apply deterministic roll using the new pack id as the nonce.
+      const roll = rollPack(commit.serverSeedHex, commit.clientSeed, userPack.id, weights);
+      const picks = applyRollToPool(roll, pool);
+      if (picks.length !== CARDS_PER_PACK) {
+        throw new Error(`fairness roll returned ${picks.length} cards`);
+      }
+
+      // Persist the commit. server_seed stays in the DB, but never leaves
+      // the server until reveal.
+      await tx.$executeRaw`
+        INSERT INTO pack_fairness (
+          user_pack_id, server_seed_hash, server_seed,
+          client_seed, nonce, weight_version_id
+        ) VALUES (
+          ${userPack.id}::uuid,
+          ${commit.serverSeedHashHex},
+          ${commit.serverSeedHex},
+          ${commit.clientSeed},
+          ${userPack.id},
+          ${versionId}
+        )
+      `;
 
       await tx.packCard.createMany({
         data: picks.map((card, idx) => ({

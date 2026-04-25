@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { computeAuctionFee } from "@/lib/auction-math";
 import { prisma } from "@/lib/db";
+import { evaluateWashTradeSignals } from "@/lib/wash-trade-detect";
 import { emitToRoom } from "@/lib/ws-emit";
 
 // POST /api/internal/auctions/settle-due
@@ -33,6 +34,8 @@ export async function POST(request: Request) {
     status: "CLOSED";
     winnerId: string | null;
     finalBid: string | null;
+    sellerId: string | null;
+    marketPriceUsd: string | null;
   }> = [];
 
   // Loop: pick up to 20 due rows per call. If there are more, the next tick
@@ -54,6 +57,23 @@ export async function POST(request: Request) {
       auctionId: s.id,
       event: "closed",
     });
+
+    // Phase 10: post-close wash-trade evaluation. Flags go into a review
+    // queue (auction_flags); never auto-action.
+    if (s.winnerId && s.sellerId && s.finalBid && s.marketPriceUsd) {
+      try {
+        await evaluateWashTradeSignals({
+          auctionId: s.id,
+          sellerId: s.sellerId,
+          winnerId: s.winnerId,
+          finalBid: Number(s.finalBid),
+          marketPriceUsd: Number(s.marketPriceUsd),
+        });
+      } catch (err) {
+        // Detector failures must not block settlement broadcast.
+        console.warn("wash-trade detect failed:", err instanceof Error ? err.message : err);
+      }
+    }
   }
 
   return NextResponse.json({ settled: settled.length, ids: settled.map((s) => s.id) });
@@ -64,19 +84,25 @@ async function settleNextDue(): Promise<{
   status: "CLOSED";
   winnerId: string | null;
   finalBid: string | null;
+  sellerId: string | null;
+  marketPriceUsd: string | null;
 } | null> {
   return prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<{
       id: string; seller_id: string; user_card_id: string;
       current_bid: string | null; current_bidder_id: string | null;
+      market_price: string | null;
     }[]>`
-      SELECT id, seller_id, user_card_id,
-             current_bid::text AS current_bid, current_bidder_id
-      FROM auctions
-      WHERE status = 'LIVE' AND closes_at <= now()
-      ORDER BY closes_at ASC
+      SELECT a.id, a.seller_id, a.user_card_id,
+             a.current_bid::text AS current_bid, a.current_bidder_id,
+             c.base_price::text AS market_price
+      FROM auctions a
+      JOIN user_cards uc ON uc.id = a.user_card_id
+      JOIN cards c ON c.id = uc.card_id
+      WHERE a.status = 'LIVE' AND a.closes_at <= now()
+      ORDER BY a.closes_at ASC
       LIMIT 1
-      FOR UPDATE SKIP LOCKED
+      FOR UPDATE OF a SKIP LOCKED
     `;
     if (rows.length === 0) return null;
     const a = rows[0];
@@ -92,7 +118,11 @@ async function settleNextDue(): Promise<{
         where: { id: a.user_card_id },
         data: { status: "HELD" },
       });
-      return { id: a.id, status: "CLOSED" as const, winnerId: null, finalBid: null };
+      return {
+        id: a.id, status: "CLOSED" as const,
+        winnerId: null, finalBid: null,
+        sellerId: a.seller_id, marketPriceUsd: a.market_price,
+      };
     }
 
     const finalBid = new Prisma.Decimal(a.current_bid);
@@ -183,6 +213,8 @@ async function settleNextDue(): Promise<{
       status: "CLOSED" as const,
       winnerId: a.current_bidder_id,
       finalBid: finalBid.toFixed(4),
+      sellerId: a.seller_id,
+      marketPriceUsd: a.market_price,
     };
   }, {
     isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
