@@ -19,19 +19,19 @@ model User {
   email        String   @unique
   passwordHash String   @map("password_hash")
   balance      Decimal  @default(0) @db.Decimal(18, 4)
-  balanceHeld  Decimal  @default(0) @db.Decimal(18, 4) @map("balance_held")
+  balanceHeld  Decimal  @default(0) @map("balance_held") @db.Decimal(18, 4)
   isAdmin      Boolean  @default(false) @map("is_admin")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  ledger         Ledger[]
-  createdDrops   Drop[]     @relation("DropCreator")
-  packs          UserPack[]
-  cards          UserCard[]
-  listings       Listing[]  @relation("ListingSeller")
-  purchases      Listing[]  @relation("ListingBuyer")
-  auctionsSold   Auction[]  @relation("AuctionSeller")
-  auctionsWon    Auction[]  @relation("AuctionWinner")
-  bids           Bid[]
+  ledger       Ledger[]
+  createdDrops Drop[]     @relation("DropCreator")
+  packs        UserPack[]
+  cards        UserCard[]
+  listings     Listing[]  @relation("ListingSeller")
+  purchases    Listing[]  @relation("ListingBuyer")
+  auctionsSold Auction[]  @relation("AuctionSeller")
+  auctionsWon  Auction[]  @relation("AuctionWinner")
+  bids         Bid[]
 
   @@map("users")
 }
@@ -72,17 +72,17 @@ enum LedgerReason {
 // ─── Cards ──────────────────────────────────────────────────────────────────
 
 model Card {
-  id            String    @id @default(uuid()) @db.Uuid
-  pokemontcgId  String    @unique @map("pokemontcg_id")
-  name          String
-  setCode       String    @map("set_code")
-  number        String
-  rarityBucket  Rarity    @map("rarity_bucket")
-  imageUrl      String    @map("image_url")
-  basePrice     Decimal   @map("base_price") @db.Decimal(18, 4)
-  lastPricedAt  DateTime? @map("last_priced_at") @db.Timestamptz
-  staleSince    DateTime? @map("stale_since") @db.Timestamptz
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  id           String    @id @default(uuid()) @db.Uuid
+  pokemontcgId String    @unique @map("pokemontcg_id")
+  name         String
+  setCode      String    @map("set_code")
+  number       String
+  rarityBucket Rarity    @map("rarity_bucket")
+  imageUrl     String    @map("image_url")
+  basePrice    Decimal   @map("base_price") @db.Decimal(18, 4)
+  lastPricedAt DateTime? @map("last_priced_at") @db.Timestamptz
+  staleSince   DateTime? @map("stale_since") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   packCards      PackCard[]
   priceSnapshots PriceSnapshot[]
@@ -155,19 +155,41 @@ enum DropStatus {
 // ─── User-owned packs + their contents ──────────────────────────────────────
 
 model UserPack {
-  id          String   @id @default(uuid()) @db.Uuid
-  userId      String   @map("user_id") @db.Uuid
-  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
-  dropId      String   @map("drop_id") @db.Uuid
-  drop        Drop     @relation(fields: [dropId], references: [id], onDelete: Restrict)
-  purchasedAt DateTime @default(now()) @map("purchased_at") @db.Timestamptz
-  isRevealed  Boolean  @default(false) @map("is_revealed")
+  id              String             @id @default(uuid()) @db.Uuid
+  userId          String             @map("user_id") @db.Uuid
+  user            User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  dropId          String             @map("drop_id") @db.Uuid
+  drop            Drop               @relation(fields: [dropId], references: [id], onDelete: Restrict)
+  purchasedAt     DateTime           @default(now()) @map("purchased_at") @db.Timestamptz
+  isRevealed      Boolean            @default(false) @map("is_revealed")
+  weightVersionId String?            @map("weight_version_id") @db.Uuid
+  weightVersion   PackWeightVersion? @relation(fields: [weightVersionId], references: [id], onDelete: Restrict)
 
   cards PackCard[]
 
   @@index([userId, isRevealed])
   @@index([userId, dropId])
   @@map("user_packs")
+}
+
+// ─── Phase 8: per-tier rarity weight versions (economics solver output) ─────
+
+model PackWeightVersion {
+  id                String   @id @default(uuid()) @db.Uuid
+  tier              PackTier
+  weightsJson       Json     @map("weights_json")
+  solvedForPricesAt DateTime @map("solved_for_prices_at") @db.Timestamptz
+  evPerPackUsd      Decimal  @map("ev_per_pack_usd") @db.Decimal(18, 4)
+  targetMargin      Decimal  @map("target_margin") @db.Decimal(6, 4)
+  realisedMargin    Decimal  @map("realised_margin") @db.Decimal(6, 4)
+  constraintBinding String?  @map("constraint_binding")
+  isActive          Boolean  @default(false) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  userPacks UserPack[]
+
+  @@index([tier, isActive])
+  @@map("pack_weight_versions")
 }
 
 model PackCard {
@@ -271,22 +293,22 @@ enum ListingStatus {
 // Winner's balance_held is debited directly on settlement (no second move).
 
 model Auction {
-  id            String        @id @default(uuid()) @db.Uuid
-  sellerId      String        @map("seller_id") @db.Uuid
-  seller        User          @relation("AuctionSeller", fields: [sellerId], references: [id], onDelete: Restrict)
-  userCardId    String        @unique @map("user_card_id") @db.Uuid
-  userCard      UserCard      @relation(fields: [userCardId], references: [id], onDelete: Restrict)
-  startingBid   Decimal       @map("starting_bid") @db.Decimal(18, 4)
-  currentBid    Decimal?      @map("current_bid") @db.Decimal(18, 4)
-  currentBidderId String?     @map("current_bidder_id") @db.Uuid
-  startsAt      DateTime      @default(now()) @map("starts_at") @db.Timestamptz
-  closesAt      DateTime      @map("closes_at") @db.Timestamptz
-  extensions    Int           @default(0)
-  status        AuctionStatus @default(LIVE)
-  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  closedAt      DateTime?     @map("closed_at") @db.Timestamptz
-  winnerId      String?       @map("winner_id") @db.Uuid
-  winner        User?         @relation("AuctionWinner", fields: [winnerId], references: [id], onDelete: Restrict)
+  id              String        @id @default(uuid()) @db.Uuid
+  sellerId        String        @map("seller_id") @db.Uuid
+  seller          User          @relation("AuctionSeller", fields: [sellerId], references: [id], onDelete: Restrict)
+  userCardId      String        @unique @map("user_card_id") @db.Uuid
+  userCard        UserCard      @relation(fields: [userCardId], references: [id], onDelete: Restrict)
+  startingBid     Decimal       @map("starting_bid") @db.Decimal(18, 4)
+  currentBid      Decimal?      @map("current_bid") @db.Decimal(18, 4)
+  currentBidderId String?       @map("current_bidder_id") @db.Uuid
+  startsAt        DateTime      @default(now()) @map("starts_at") @db.Timestamptz
+  closesAt        DateTime      @map("closes_at") @db.Timestamptz
+  extensions      Int           @default(0)
+  status          AuctionStatus @default(LIVE)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  closedAt        DateTime?     @map("closed_at") @db.Timestamptz
+  winnerId        String?       @map("winner_id") @db.Uuid
+  winner          User?         @relation("AuctionWinner", fields: [winnerId], references: [id], onDelete: Restrict)
 
   bids Bid[]
 
