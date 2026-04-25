@@ -20,9 +20,12 @@ export function DropCountdown({ to, label = "Opens in" }: { to: string; label?: 
   const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
-    setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
+    const tick = () => setNow(Date.now());
+    // First tick on next frame (avoids cascading render from synchronous
+    // setState inside the effect body); then resume per-second updates.
+    const raf = requestAnimationFrame(tick);
+    const t = setInterval(tick, 1000);
+    return () => { cancelAnimationFrame(raf); clearInterval(t); };
   }, []);
 
   return (

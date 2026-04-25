@@ -18,7 +18,7 @@ All HTTP endpoints for PullVault. Each `route.ts` becomes an endpoint at its fol
 |--------|------|---------|
 | GET | `/api/drops` | List all drops with derived status. |
 | GET | `/api/drops/[id]` | Drop detail + remaining. |
-| POST | `/api/drops/[id]/purchase` | Atomic purchase: per-user rate-limit (6/min, 20/hr) → 0–500 ms admission jitter → `SELECT FOR UPDATE` on drop → balance check → decrement remaining → deterministic seeded roll using the active solver weights → write 5 `pack_cards` + a `pack_fairness` commit row → ledger `PACK_PURCHASE`. Emits `inventory_update` on `drop:<id>`. |
+| POST | `/api/drops/[id]/purchase` | Atomic purchase: per-user rate-limit (6/min, 20/hr; fail-open) → 0–500 ms admission jitter → `SELECT FOR UPDATE` on drop → balance check → decrement remaining → deterministic seeded roll (active solver weights + tier pity floor) → write 5 `pack_cards` + a `pack_fairness` commit row → ledger `PACK_PURCHASE`. Emits `inventory_update` on `drop:<id>`. |
 | POST | `/api/packs/[id]/reveal` | Atomic reveal: `SELECT FOR UPDATE` on user_pack, flip isRevealed, stamp `pack_fairness.revealed_at`, generate user_cards rows with ratio-allocated acquiredPrice. |
 | GET  | `/api/packs/[id]/contents` | Revisit-only. 409 until revealed. Used by `?mode=static` reveal pages. |
 | GET  | `/api/me/packs` | Owned packs with `?revealed=true|false|all`. |
@@ -50,7 +50,7 @@ All HTTP endpoints for PullVault. Each `route.ts` becomes an endpoint at its fol
 | GET | `/api/auctions` | Browse LIVE or CLOSED with sort + rarity filter. |
 | GET | `/api/auctions/[id]` | Detail + last 50 bids + seller/winner emails. **Sealed final-minute window** redacts `currentBid`, `currentBidderId`, `bids[]`, `isLeading`; sets `sealed: true`. |
 | DELETE | `/api/auctions/[id]` | Seller cancel (only if LIVE + zero bids). |
-| POST | `/api/auctions/[id]/bid` | Atomic bid: 2 s same-user min-interval (Redis SET NX EX) → FOR UPDATE on auction → 5× fat-finger cap → id-sorted lock on (bidder, prev bidder) → balance check → BID_HOLD + optional BID_RELEASE for previous bidder → anti-snipe extension → append to `bids` → update denormalised high. Inside the sealed final 60 s, suppresses `bid_placed`; emits `sealed_phase_started` once on entry. |
+| POST | `/api/auctions/[id]/bid` | Atomic bid: 2 s same-user min-interval (Redis SET NX EX, fail-open on transport error) → FOR UPDATE on auction → first-bid validation (≥ `starting_bid`, ≤ 5× `starting_bid`) or increment validation (≥ `minNextBid`, ≤ 5× current high) → id-sorted lock on (bidder, prev bidder) → balance check → BID_HOLD + optional BID_RELEASE for previous bidder → anti-snipe extension → append to `bids` → update denormalised high. Inside the sealed final 60 s, suppresses `bid_placed`; emits `sealed_phase_started` once on entry. |
 | POST | `/api/internal/auctions/settle-due` | **Internal** (`X-Internal-Secret`). Called by `apps/ws` close worker every 1s. `SELECT FOR UPDATE SKIP LOCKED` up to 20 due auctions, settles each in its own tx, broadcasts `auction_closed`, then runs wash-trade detection (writes to `auction_flags`) outside the tx. |
 
 ### Fairness (public)
